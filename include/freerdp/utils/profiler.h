@@ -23,7 +23,7 @@
 #include <freerdp/api.h>
 #include <freerdp/utils/stopwatch.h>
 
-typedef struct _PROFILER PROFILER;
+typedef struct S_PROFILER PROFILER;
 
 #ifdef __cplusplus
 extern "C"
@@ -50,7 +50,7 @@ extern "C"
 	{                                 \
 		profiler_free(prof);          \
 		prof = profiler_create(name); \
-	} while (0)
+	} while (0);
 #define PROFILER_DEFINE(prof) PROFILER* prof;
 #define PROFILER_CREATE(prof, name) prof = profiler_create(name);
 #define PROFILER_FREE(prof) profiler_free(prof);

@@ -69,12 +69,61 @@ void* ncrypt_new_handle(NCryptHandleType kind, size_t len, NCryptGetPropertyFn g
 	return ret;
 }
 
-SECURITY_STATUS winpr_NCryptDefault_dtor(NCryptBaseHandle* h)
+SECURITY_STATUS winpr_NCryptDefault_dtor(NCRYPT_HANDLE handle)
 {
+	NCryptBaseHandle* h = (NCryptBaseHandle*)handle;
+	WINPR_ASSERT(h);
+
 	memset(h->magic, 0, sizeof(h->magic));
 	h->type = WINPR_NCRYPT_INVALID;
 	h->releaseFn = NULL;
 	free(h);
+	return ERROR_SUCCESS;
+}
+
+SECURITY_STATUS NCryptEnumStorageProviders(DWORD* wProviderCount,
+                                           NCryptProviderName** ppProviderList, DWORD dwFlags)
+{
+	NCryptProviderName* ret;
+	size_t stringAllocSize = 0;
+#ifdef WITH_PKCS11
+	LPWSTR strPtr;
+	static const WCHAR emptyComment[] = { 0 };
+	size_t copyAmount;
+#endif
+
+	*wProviderCount = 0;
+	*ppProviderList = NULL;
+
+#ifdef WITH_PKCS11
+	*wProviderCount += 1;
+	stringAllocSize += (_wcslen(MS_SCARD_PROV) + 1) * 2;
+	stringAllocSize += sizeof(emptyComment);
+#endif
+
+	if (!*wProviderCount)
+		return ERROR_SUCCESS;
+
+	ret = malloc(*wProviderCount * sizeof(NCryptProviderName) + stringAllocSize);
+	if (!ret)
+		return NTE_NO_MEMORY;
+
+
+#ifdef WITH_PKCS11
+	strPtr = (LPWSTR)(ret + *wProviderCount);
+
+	ret->pszName = strPtr;
+	copyAmount = (_wcslen(MS_SCARD_PROV) + 1) * 2;
+	memcpy(strPtr, MS_SCARD_PROV, copyAmount);
+	strPtr += copyAmount / 2;
+
+	ret->pszComment = strPtr;
+	copyAmount = sizeof(emptyComment);
+	memcpy(strPtr, emptyComment, copyAmount);
+
+	*ppProviderList = ret;
+#endif
+
 	return ERROR_SUCCESS;
 }
 
@@ -83,11 +132,10 @@ SECURITY_STATUS NCryptOpenStorageProvider(NCRYPT_PROV_HANDLE* phProvider, LPCWST
 {
 
 #ifdef WITH_PKCS11
-	if (_wcscmp(pszProviderName, MS_SMART_CARD_KEY_STORAGE_PROVIDER) == 0)
+	if (_wcscmp(pszProviderName, MS_SMART_CARD_KEY_STORAGE_PROVIDER) == 0 ||
+	    _wcscmp(pszProviderName, MS_SCARD_PROV) == 0)
 	{
-		static LPCSTR openscPaths[] = { "/usr/lib/x86_64-linux-gnu/pkcs11/opensc-pkcs11.so", NULL };
-
-		return winpr_NCryptOpenStorageProviderEx(phProvider, pszProviderName, dwFlags, openscPaths);
+		return winpr_NCryptOpenStorageProviderEx(phProvider, pszProviderName, dwFlags, NULL);
 	}
 #endif
 
@@ -102,9 +150,6 @@ SECURITY_STATUS winpr_NCryptOpenStorageProviderEx(NCRYPT_PROV_HANDLE* phProvider
 	if (_wcscmp(pszProviderName, MS_SMART_CARD_KEY_STORAGE_PROVIDER) == 0 ||
 	    _wcscmp(pszProviderName, MS_SCARD_PROV) == 0)
 	{
-		SECURITY_STATUS NCryptOpenP11StorageProviderEx(NCRYPT_PROV_HANDLE * phProvider,
-		                                               LPCWSTR pszProviderName, DWORD dwFlags,
-		                                               LPCSTR * modulePaths);
 		return NCryptOpenP11StorageProviderEx(phProvider, pszProviderName, dwFlags, modulePaths);
 	}
 #endif
@@ -144,6 +189,14 @@ static NCryptKeyGetPropertyEnum propertyStringToEnum(LPCWSTR pszProperty)
 	if (_wcscmp(pszProperty, NCRYPT_CERTIFICATE_PROPERTY) == 0)
 	{
 		return NCRYPT_PROPERTY_CERTIFICATE;
+	}
+	else if (_wcscmp(pszProperty, NCRYPT_READER_PROPERTY) == 0)
+	{
+		return NCRYPT_PROPERTY_READER;
+	}
+	else if (_wcscmp(pszProperty, NCRYPT_WINPR_SLOTID) == 0)
+	{
+		return NCRYPT_PROPERTY_SLOTID;
 	}
 
 	return NCRYPT_PROPERTY_UNKNOWN;

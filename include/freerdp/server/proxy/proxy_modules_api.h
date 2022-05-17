@@ -68,8 +68,8 @@ struct proxy_plugin
 	proxyHookFn ClientX509Certificate; /* 71 custom=rdpContext* */
 	proxyHookFn ClientLoginFailure;    /* 72 custom=rdpContext* */
 	proxyHookFn ClientEndPaint;        /* 73 custom=rdpContext* */
-
-	UINT64 reserved3[96 - 74]; /* 74-95 */
+	proxyHookFn ClientRedirect;        /* 74 custom=rdpContext* */
+	UINT64 reserved3[96 - 75];         /* 75-95 */
 
 	proxyHookFn ServerPostConnect;  /* 96  custom=freerdp_peer* */
 	proxyHookFn ServerPeerActivate; /* 97  custom=freerdp_peer* */
@@ -144,7 +144,7 @@ typedef struct proxy_mouse_event_info
 	UINT16 y;
 } proxyMouseEventInfo;
 
-typedef struct channel_data_event_info
+typedef struct
 {
 	/* channel metadata */
 	const char* channel_name;
@@ -157,7 +157,7 @@ typedef struct channel_data_event_info
 	UINT32 flags;
 } proxyChannelDataEventInfo;
 
-typedef enum proxy_fetch_target_method
+typedef enum
 {
 	PROXY_FETCH_TARGET_METHOD_DEFAULT,
 	PROXY_FETCH_TARGET_METHOD_CONFIG,
@@ -165,7 +165,7 @@ typedef enum proxy_fetch_target_method
 	PROXY_FETCH_TARGET_USE_CUSTOM_ADDR
 } ProxyFetchTargetMethod;
 
-typedef struct fetch_target_event_info
+typedef struct
 {
 	/* out values */
 	char* target_address;

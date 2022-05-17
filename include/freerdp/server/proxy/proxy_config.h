@@ -69,6 +69,8 @@ struct proxy_config
 	BOOL PassthroughIsBlacklist;
 	char** Passthrough;
 	size_t PassthroughCount;
+	char** Intercept;
+	size_t InterceptCount;
 
 	/* clipboard specific settings */
 	BOOL TextOnly;
@@ -196,7 +198,7 @@ extern "C"
 	 * @brief pf_config_plugin Register a proxy plugin handling event filtering
 	 * defined in the configuration.
 	 *
-	 * @param plugins_manager
+	 * @param plugins_manager The plugin manager
 	 * @param userdata A proxyConfig* to use as reference
 	 *
 	 * @return  TRUE for success, FALSE for failure

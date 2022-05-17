@@ -32,42 +32,32 @@
 #include <winpr/smartcard.h>
 #include <winpr/collections.h>
 
-#include "smartcard_operations.h"
+#include <freerdp/utils/smartcard_operations.h>
+#include <freerdp/utils/smartcard_call.h>
+
+#if defined(WITH_SMARTCARD_EMULATE)
+#include <freerdp/emulate/scard/smartcard_emulate.h>
+#endif
 
 #define TAG CHANNELS_TAG("smartcard.client")
 
-typedef struct _SMARTCARD_DEVICE SMARTCARD_DEVICE;
+typedef struct
+{
+	DEVICE device;
 
-struct _SMARTCARD_CONTEXT
+	HANDLE thread;
+	scard_call_context* callctx;
+	wMessageQueue* IrpQueue;
+	wListDictionary* rgOutstandingMessages;
+	rdpContext* rdpcontext;
+} SMARTCARD_DEVICE;
+
+typedef struct
 {
 	HANDLE thread;
 	SCARDCONTEXT hContext;
 	wMessageQueue* IrpQueue;
 	SMARTCARD_DEVICE* smartcard;
-};
-typedef struct _SMARTCARD_CONTEXT SMARTCARD_CONTEXT;
-
-struct _SMARTCARD_DEVICE
-{
-	DEVICE device;
-
-	HANDLE thread;
-	HANDLE StartedEvent;
-	wMessageQueue* IrpQueue;
-	wQueue* CompletedIrpQueue;
-	wListDictionary* rgSCardContextList;
-	wListDictionary* rgOutstandingMessages;
-	rdpContext* rdpcontext;
-	wLinkedList* names;
-};
-
-SMARTCARD_CONTEXT* smartcard_context_new(SMARTCARD_DEVICE* smartcard, SCARDCONTEXT hContext);
-void smartcard_context_free(void* pContext);
-
-LONG smartcard_irp_device_control_decode(SMARTCARD_DEVICE* smartcard,
-                                         SMARTCARD_OPERATION* operation);
-LONG smartcard_irp_device_control_call(SMARTCARD_DEVICE* smartcard, SMARTCARD_OPERATION* operation);
-
-#include "smartcard_pack.h"
+} SMARTCARD_CONTEXT;
 
 #endif /* FREERDP_CHANNEL_SMARTCARD_CLIENT_MAIN_H */

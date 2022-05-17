@@ -35,7 +35,11 @@ typedef BOOL (*psPeerContextNew)(freerdp_peer* peer, rdpContext* context);
 typedef void (*psPeerContextFree)(freerdp_peer* peer, rdpContext* context);
 
 typedef BOOL (*psPeerInitialize)(freerdp_peer* peer);
-typedef BOOL (*psPeerGetFileDescriptor)(freerdp_peer* peer, void** rfds, int* rcount);
+#if defined(WITH_FREERDP_DEPRECATED)
+WINPR_DEPRECATED_VAR("Use psPeerGetEventHandle instead",
+                     typedef BOOL (*psPeerGetFileDescriptor)(freerdp_peer* peer, void** rfds,
+                                                             int* rcount);)
+#endif
 typedef HANDLE (*psPeerGetEventHandle)(freerdp_peer* peer);
 typedef DWORD (*psPeerGetEventHandles)(freerdp_peer* peer, HANDLE* events, DWORD count);
 typedef HANDLE (*psPeerGetReceiveEventHandle)(freerdp_peer* peer);
@@ -68,6 +72,7 @@ typedef int (*psPeerVirtualChannelWrite)(freerdp_peer* peer, HANDLE hChannel, co
                                          UINT32 length);
 typedef void* (*psPeerVirtualChannelGetData)(freerdp_peer* peer, HANDLE hChannel);
 typedef int (*psPeerVirtualChannelSetData)(freerdp_peer* peer, HANDLE hChannel, void* data);
+typedef BOOL (*psPeerSetState)(freerdp_peer* peer, CONNECTION_STATE state);
 
 /** @brief the result of the license callback */
 typedef enum
@@ -83,61 +88,82 @@ typedef LicenseCallbackResult (*psPeerLicenseCallback)(freerdp_peer* peer, wStre
 
 struct rdp_freerdp_peer
 {
-	rdpContext* context;
+	ALIGN64 rdpContext* context;
 
-	int sockfd;
-	char hostname[50];
+	ALIGN64 int sockfd;
+	ALIGN64 char hostname[50];
 
-	rdpUpdate* update;
-	rdpSettings* settings;
-	rdpAutoDetect* autodetect;
+#if defined(WITH_FREERDP_DEPRECATED)
+	WINPR_DEPRECATED_VAR("Use rdpContext::update instead", ALIGN64 rdpUpdate* update;)
+	WINPR_DEPRECATED_VAR("Use rdpContext::settings instead", ALIGN64 rdpSettings* settings;)
+	WINPR_DEPRECATED_VAR("Use rdpContext::autodetect instead", ALIGN64 rdpAutoDetect* autodetect;)
+#else
+	UINT64 reservedX[3];
+#endif
 
-	void* ContextExtra;
-	size_t ContextSize;
-	psPeerContextNew ContextNew;
-	psPeerContextFree ContextFree;
+	ALIGN64 void* ContextExtra;
+	ALIGN64 size_t ContextSize;
+	ALIGN64 psPeerContextNew ContextNew;
+	ALIGN64 psPeerContextFree ContextFree;
 
-	psPeerInitialize Initialize;
-	psPeerGetFileDescriptor GetFileDescriptor;
-	psPeerGetEventHandle GetEventHandle;
-	psPeerGetReceiveEventHandle GetReceiveEventHandle;
-	psPeerCheckFileDescriptor CheckFileDescriptor;
-	psPeerClose Close;
-	psPeerDisconnect Disconnect;
+	ALIGN64 psPeerInitialize Initialize;
+#if defined(WITH_FREERDP_DEPRECATED)
+	WINPR_DEPRECATED_VAR("Use freerdp_peer::GetEventHandle instead",
+	                     ALIGN64 psPeerGetFileDescriptor GetFileDescriptor;)
+#else
+	UINT64 reserved;
+#endif
+	ALIGN64 psPeerGetEventHandle GetEventHandle;
+	ALIGN64 psPeerGetReceiveEventHandle GetReceiveEventHandle;
+	ALIGN64 psPeerCheckFileDescriptor CheckFileDescriptor;
+	ALIGN64 psPeerClose Close;
+	ALIGN64 psPeerDisconnect Disconnect;
 
-	psPeerCapabilities Capabilities;
-	psPeerPostConnect PostConnect;
-	psPeerActivate Activate;
-	psPeerLogon Logon;
+	ALIGN64 psPeerCapabilities Capabilities;
+	ALIGN64 psPeerPostConnect PostConnect;
+	ALIGN64 psPeerActivate Activate;
+	ALIGN64 psPeerLogon Logon;
 
-	psPeerSendChannelData SendChannelData;
-	psPeerReceiveChannelData ReceiveChannelData;
+	ALIGN64 psPeerSendChannelData SendChannelData;
+	ALIGN64 psPeerReceiveChannelData ReceiveChannelData;
 
-	psPeerVirtualChannelOpen VirtualChannelOpen;
-	psPeerVirtualChannelClose VirtualChannelClose;
-	psPeerVirtualChannelRead VirtualChannelRead;
-	psPeerVirtualChannelWrite VirtualChannelWrite;
-	psPeerVirtualChannelGetData VirtualChannelGetData;
-	psPeerVirtualChannelSetData VirtualChannelSetData;
+	ALIGN64 psPeerVirtualChannelOpen VirtualChannelOpen;
+	ALIGN64 psPeerVirtualChannelClose VirtualChannelClose;
+	ALIGN64 psPeerVirtualChannelRead VirtualChannelRead;
+	ALIGN64 psPeerVirtualChannelWrite VirtualChannelWrite;
+	ALIGN64 psPeerVirtualChannelGetData VirtualChannelGetData;
+	ALIGN64 psPeerVirtualChannelSetData VirtualChannelSetData;
 
-	int pId;
-	UINT32 ack_frame_id;
-	BOOL local;
-	BOOL connected;
-	BOOL activated;
-	BOOL authenticated;
-	SEC_WINNT_AUTH_IDENTITY identity;
+	ALIGN64 int pId;
+	ALIGN64 UINT32 ack_frame_id;
+	ALIGN64 BOOL local;
+	ALIGN64 BOOL connected;
+	ALIGN64 BOOL activated;
+	ALIGN64 BOOL authenticated;
+	ALIGN64 SEC_WINNT_AUTH_IDENTITY identity;
 
-	psPeerIsWriteBlocked IsWriteBlocked;
-	psPeerDrainOutputBuffer DrainOutputBuffer;
-	psPeerHasMoreToRead HasMoreToRead;
-	psPeerGetEventHandles GetEventHandles;
-	psPeerAdjustMonitorsLayout AdjustMonitorsLayout;
-	psPeerClientCapabilities ClientCapabilities;
-	psPeerComputeNtlmHash ComputeNtlmHash;
-	psPeerLicenseCallback LicenseCallback;
+	ALIGN64 psPeerIsWriteBlocked IsWriteBlocked;
+	ALIGN64 psPeerDrainOutputBuffer DrainOutputBuffer;
+	ALIGN64 psPeerHasMoreToRead HasMoreToRead;
+	ALIGN64 psPeerGetEventHandles GetEventHandles;
+	ALIGN64 psPeerAdjustMonitorsLayout AdjustMonitorsLayout;
+	ALIGN64 psPeerClientCapabilities ClientCapabilities;
+	ALIGN64 psPeerComputeNtlmHash ComputeNtlmHash;
+	ALIGN64 psPeerLicenseCallback LicenseCallback;
 
-	psPeerSendChannelPacket SendChannelPacket;
+	ALIGN64 psPeerSendChannelPacket SendChannelPacket;
+
+	/**
+	 * @brief SetState Function pointer allowing to manually set the state of the
+	 * internal state machine.
+	 *
+	 * This is useful if certain parts of a RDP connection must be skipped (e.g.
+	 * when replaying a RDP connection dump the authentication/negotiate parts
+	 * must be skipped)
+	 *
+	 * \note Must be called after \b Initialize as that also modifies the state.
+	 */
+	ALIGN64 psPeerSetState SetState;
 };
 
 #ifdef __cplusplus
@@ -146,6 +172,7 @@ extern "C"
 #endif
 
 	FREERDP_API BOOL freerdp_peer_context_new(freerdp_peer* client);
+	FREERDP_API BOOL freerdp_peer_context_new_ex(freerdp_peer* client, const rdpSettings* settings);
 	FREERDP_API void freerdp_peer_context_free(freerdp_peer* client);
 
 	FREERDP_API freerdp_peer* freerdp_peer_new(int sockfd);

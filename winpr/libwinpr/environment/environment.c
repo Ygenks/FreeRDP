@@ -19,9 +19,7 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <winpr/config.h>
 
 #include <winpr/crt.h>
 #include <winpr/platform.h>
@@ -643,3 +641,71 @@ char** EnvironmentBlockToEnvpA(LPCH lpszEnvironmentBlock)
 
 	return envp;
 }
+
+#ifdef _WIN32
+
+// https://devblogs.microsoft.com/oldnewthing/20100203-00/?p=15083
+#define WINPR_MAX_ENVIRONMENT_LENGTH 2048
+
+DWORD GetEnvironmentVariableX(const char* lpName, char* lpBuffer, DWORD nSize)
+{
+	int status;
+	DWORD result = 0;
+	DWORD nSizeW = 0;
+	LPWSTR lpNameW = NULL;
+	LPWSTR lpBufferW = NULL;
+	LPSTR lpBufferA = lpBuffer;
+
+	if (ConvertToUnicode(CP_UTF8, 0, lpName, -1, &lpNameW, 0) < 1)
+		goto cleanup;
+
+	if (!lpBuffer)
+	{
+		char lpBufferMaxA[WINPR_MAX_ENVIRONMENT_LENGTH] = { 0 };
+		WCHAR lpBufferMaxW[WINPR_MAX_ENVIRONMENT_LENGTH] = { 0 };
+		LPSTR lpTmpBuffer = lpBufferMaxA;
+
+		nSizeW = ARRAYSIZE(lpBufferMaxW);
+
+		result = GetEnvironmentVariableW(lpNameW, lpBufferMaxW, nSizeW);
+
+		status = ConvertFromUnicode(CP_UTF8, 0, lpBufferMaxW, _wcsnlen(lpBufferMaxW, nSizeW) + 1,
+		                            &lpTmpBuffer, sizeof(lpBufferMaxA), NULL, NULL);
+
+		if (status > 0)
+			result = (DWORD)status;
+	}
+	else
+	{
+		nSizeW = nSize + 1;
+		lpBufferW = calloc(nSizeW, 2);
+
+		if (!lpBufferW)
+			goto cleanup;
+
+		result = GetEnvironmentVariableW(lpNameW, lpBufferW, nSizeW);
+
+		if (result == 0)
+			goto cleanup;
+
+		status = ConvertFromUnicode(CP_UTF8, 0, lpBufferW, -1, &lpBufferA, nSize, NULL, NULL);
+
+		if (status > 0)
+			result = (DWORD)(status - 1);
+	}
+
+cleanup:
+	free(lpBufferW);
+	free(lpNameW);
+
+	return result;
+}
+
+#else
+
+DWORD GetEnvironmentVariableX(const char* lpName, char* lpBuffer, DWORD nSize)
+{
+	return GetEnvironmentVariableA(lpName, lpBuffer, nSize);
+}
+
+#endif

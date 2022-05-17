@@ -19,9 +19,7 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <freerdp/config.h>
 
 #include <winpr/assert.h>
 #include <stdio.h>
@@ -40,7 +38,7 @@
 #include "audin_main.h"
 #include "opensl_io.h"
 
-typedef struct _AudinOpenSLESDevice
+typedef struct
 {
 	IAudinDevice iface;
 
@@ -248,7 +246,7 @@ static UINT audin_opensles_parse_addin_args(AudinOpenSLESDevice* device, const A
 {
 	UINT status;
 	DWORD flags;
-	COMMAND_LINE_ARGUMENT_A* arg;
+	const COMMAND_LINE_ARGUMENT_A* arg;
 	AudinOpenSLESDevice* opensles = (AudinOpenSLESDevice*)device;
 	COMMAND_LINE_ARGUMENT_A audin_opensles_args[] = {
 		{ "dev", COMMAND_LINE_VALUE_REQUIRED, "<device>", NULL, NULL, -1, NULL,
@@ -288,18 +286,12 @@ static UINT audin_opensles_parse_addin_args(AudinOpenSLESDevice* device, const A
 	return CHANNEL_RC_OK;
 }
 
-#ifdef BUILTIN_CHANNELS
-#define freerdp_audin_client_subsystem_entry opensles_freerdp_audin_client_subsystem_entry
-#else
-#define freerdp_audin_client_subsystem_entry FREERDP_API freerdp_audin_client_subsystem_entry
-#endif
-
 /**
  * Function description
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-UINT freerdp_audin_client_subsystem_entry(PFREERDP_AUDIN_DEVICE_ENTRY_POINTS pEntryPoints)
+UINT opensles_freerdp_audin_client_subsystem_entry(PFREERDP_AUDIN_DEVICE_ENTRY_POINTS pEntryPoints)
 {
 	const ADDIN_ARGV* args;
 	AudinOpenSLESDevice* opensles;

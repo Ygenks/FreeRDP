@@ -31,7 +31,7 @@
 #include <freerdp/settings.h>
 #include <freerdp/server/rdpdr.h>
 
-struct _rdpdr_server_private
+struct s_rdpdr_server_private
 {
 	HANDLE Thread;
 	HANDLE StopEvent;
@@ -50,31 +50,22 @@ struct _rdpdr_server_private
 
 #define RDPDR_HEADER_LENGTH 4
 
-struct _RDPDR_HEADER
+typedef struct
 {
 	UINT16 Component;
 	UINT16 PacketId;
-};
-typedef struct _RDPDR_HEADER RDPDR_HEADER;
-
-#define RDPDR_VERSION_MAJOR 0x0001
-
-#define RDPDR_VERSION_MINOR_RDP50 0x0002
-#define RDPDR_VERSION_MINOR_RDP51 0x0005
-#define RDPDR_VERSION_MINOR_RDP52 0x000A
-#define RDPDR_VERSION_MINOR_RDP6X 0x000C
+} RDPDR_HEADER;
 
 #define RDPDR_CAPABILITY_HEADER_LENGTH 8
 
-struct _RDPDR_CAPABILITY_HEADER
+typedef struct
 {
 	UINT16 CapabilityType;
 	UINT16 CapabilityLength;
 	UINT32 Version;
-};
-typedef struct _RDPDR_CAPABILITY_HEADER RDPDR_CAPABILITY_HEADER;
+} RDPDR_CAPABILITY_HEADER;
 
-struct _RDPDR_IRP
+typedef struct S_RDPDR_IRP
 {
 	UINT32 CompletionId;
 	UINT32 DeviceId;
@@ -83,9 +74,8 @@ struct _RDPDR_IRP
 	char ExtraBuffer[256];
 	void* CallbackData;
 	UINT(*Callback)
-	(RdpdrServerContext* context, wStream* s, struct _RDPDR_IRP* irp, UINT32 deviceId,
+	(RdpdrServerContext* context, wStream* s, struct S_RDPDR_IRP* irp, UINT32 deviceId,
 	 UINT32 completionId, UINT32 ioStatus);
-};
-typedef struct _RDPDR_IRP RDPDR_IRP;
+} RDPDR_IRP;
 
 #endif /* FREERDP_CHANNEL_RDPDR_SERVER_MAIN_H */

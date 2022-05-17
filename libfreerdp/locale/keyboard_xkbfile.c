@@ -17,9 +17,7 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <freerdp/config.h>
 
 #include "keyboard_xkbfile.h"
 
@@ -41,12 +39,11 @@
 #include <X11/extensions/XKBfile.h>
 #include <X11/extensions/XKBrules.h>
 
-struct _XKB_KEY_NAME_SCANCODE
+typedef struct
 {
 	const char* xkb_keyname; /* XKB keyname */
 	DWORD rdp_scancode;
-};
-typedef struct _XKB_KEY_NAME_SCANCODE XKB_KEY_NAME_SCANCODE;
+} XKB_KEY_NAME_SCANCODE;
 
 static const XKB_KEY_NAME_SCANCODE XKB_KEY_NAME_SCANCODE_TABLE[] = {
 	{ "AB00", RDP_SCANCODE_LSHIFT },
@@ -383,12 +380,12 @@ static char* comma_substring(char* s, int n)
 
 int detect_keyboard_layout_from_xkbfile(void* display, DWORD* keyboardLayoutId)
 {
-	char* layout;
-	char* variant;
+	char* layout = NULL;
+	char* variant = NULL;
 	DWORD group = 0;
-	XkbStateRec state;
+	XkbStateRec state = { 0 };
 	XKeyboardState coreKbdState;
-	XkbRF_VarDefsRec rules_names;
+	XkbRF_VarDefsRec rules_names = { 0 };
 
 	DEBUG_KBD("display: %p", display);
 

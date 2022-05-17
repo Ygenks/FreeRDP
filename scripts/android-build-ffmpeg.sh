@@ -1,6 +1,6 @@
 #!/bin/bash
 
-SCM_URL=https://github.com/FFmpeg/FFmpeg
+SCM_URL=https://github.com/FFmpeg/FFmpeg/archive
 SCM_TAG=n4.4.1
 
 OLD_PATH=$PATH
@@ -125,7 +125,7 @@ function build {
         --enable-jni --enable-mediacodec \
         --enable-shared \
         --disable-stripping \
-        --disable-programs --disable-doc --disable-avdevice --disable-avfilter --disable-avformat --disable-swscale
+        --disable-programs --disable-doc --disable-avdevice --disable-avfilter --disable-avformat
 
     common_run make clean
     common_run make -j

@@ -10,13 +10,15 @@
 #import "MacFreeRDP/mfreerdp.h"
 #import "MacFreeRDP/mf_client.h"
 #import "MacFreeRDP/MRDPView.h"
+
+#import <winpr/assert.h>
 #import <freerdp/client/cmdline.h>
 
 static AppDelegate *_singleDelegate = nil;
-void AppDelegate_ConnectionResultEventHandler(void *context, ConnectionResultEventArgs *e);
-void AppDelegate_ErrorInfoEventHandler(void *ctx, ErrorInfoEventArgs *e);
-void AppDelegate_EmbedWindowEventHandler(void *context, EmbedWindowEventArgs *e);
-void AppDelegate_ResizeWindowEventHandler(void *context, ResizeWindowEventArgs *e);
+void AppDelegate_ConnectionResultEventHandler(void *context, const ConnectionResultEventArgs *e);
+void AppDelegate_ErrorInfoEventHandler(void *ctx, const ErrorInfoEventArgs *e);
+void AppDelegate_EmbedWindowEventHandler(void *context, const EmbedWindowEventArgs *e);
+void AppDelegate_ResizeWindowEventHandler(void *context, const ResizeWindowEventArgs *e);
 void mac_set_view_size(rdpContext *context, MRDPView *view);
 
 @implementation AppDelegate
@@ -38,17 +40,22 @@ void mac_set_view_size(rdpContext *context, MRDPView *view);
 	[self CreateContext];
 	status = [self ParseCommandLineArguments];
 	mfc = (mfContext *)context;
+	WINPR_ASSERT(mfc);
+
 	mfc->view = (void *)mrdpView;
 
 	if (status == 0)
 	{
 		NSScreen *screen = [[NSScreen screens] objectAtIndex:0];
 		NSRect screenFrame = [screen frame];
+		rdpSettings *settings = context->settings;
 
-		if (context->instance->settings->Fullscreen)
+		WINPR_ASSERT(settings);
+
+		if (settings->Fullscreen)
 		{
-			context->instance->settings->DesktopWidth = screenFrame.size.width;
-			context->instance->settings->DesktopHeight = screenFrame.size.height;
+			settings->DesktopWidth = screenFrame.size.width;
+			settings->DesktopHeight = screenFrame.size.height;
 		}
 
 		PubSub_SubscribeConnectionResult(context->pubSub, AppDelegate_ConnectionResultEventHandler);
@@ -58,17 +65,17 @@ void mac_set_view_size(rdpContext *context, MRDPView *view);
 		freerdp_client_start(context);
 		NSString *winTitle;
 
-		if (mfc->context.settings->WindowTitle && mfc->context.settings->WindowTitle[0])
+		if (settings->WindowTitle && settings->WindowTitle[0])
 		{
-			winTitle = [[NSString alloc] initWithCString:mfc->context.settings->WindowTitle];
+			winTitle = [[NSString alloc] initWithCString:settings->WindowTitle encoding:NSUTF8StringEncoding];
 		}
 		else
 		{
 			winTitle = [[NSString alloc]
 			    initWithFormat:@"%@:%u",
-			                   [NSString stringWithCString:mfc->context.settings->ServerHostname
+			                   [NSString stringWithCString:settings->ServerHostname
 			                                      encoding:NSUTF8StringEncoding],
-			                   mfc -> context.settings->ServerPort];
+			                   settings->ServerPort];
 		}
 
 		[window setTitle:winTitle];
@@ -197,7 +204,7 @@ void mac_set_view_size(rdpContext *context, MRDPView *view);
  * On connection error, display message and quit application
  ***********************************************************************/
 
-void AppDelegate_ConnectionResultEventHandler(void *ctx, ConnectionResultEventArgs *e)
+void AppDelegate_ConnectionResultEventHandler(void *ctx, const ConnectionResultEventArgs *e)
 {
 	rdpContext *context = (rdpContext *)ctx;
 	NSLog(@"ConnectionResult event result:%d\n", e->result);
@@ -226,7 +233,7 @@ void AppDelegate_ConnectionResultEventHandler(void *ctx, ConnectionResultEventAr
 	}
 }
 
-void AppDelegate_ErrorInfoEventHandler(void *ctx, ErrorInfoEventArgs *e)
+void AppDelegate_ErrorInfoEventHandler(void *ctx, const ErrorInfoEventArgs *e)
 {
 	NSLog(@"ErrorInfo event code:%d\n", e->code);
 
@@ -249,7 +256,7 @@ void AppDelegate_ErrorInfoEventHandler(void *ctx, ErrorInfoEventArgs *e)
 	}
 }
 
-void AppDelegate_EmbedWindowEventHandler(void *ctx, EmbedWindowEventArgs *e)
+void AppDelegate_EmbedWindowEventHandler(void *ctx, const EmbedWindowEventArgs *e)
 {
 	rdpContext *context = (rdpContext *)ctx;
 
@@ -269,7 +276,7 @@ void AppDelegate_EmbedWindowEventHandler(void *ctx, EmbedWindowEventArgs *e)
 	}
 }
 
-void AppDelegate_ResizeWindowEventHandler(void *ctx, ResizeWindowEventArgs *e)
+void AppDelegate_ResizeWindowEventHandler(void *ctx, const ResizeWindowEventArgs *e)
 {
 	rdpContext *context = (rdpContext *)ctx;
 	fprintf(stderr, "ResizeWindowEventHandler: %d %d\n", e->width, e->height);

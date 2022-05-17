@@ -19,9 +19,7 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <freerdp/config.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,6 +27,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 
+#include <winpr/assert.h>
 #include <winpr/crt.h>
 
 #include <freerdp/log.h>
@@ -116,7 +115,12 @@ int xf_list_monitors(xfContext* xfc)
 static BOOL xf_is_monitor_id_active(xfContext* xfc, UINT32 id)
 {
 	UINT32 index;
-	rdpSettings* settings = xfc->context.settings;
+	const rdpSettings* settings;
+
+	WINPR_ASSERT(xfc);
+
+	settings = xfc->common.context.settings;
+	WINPR_ASSERT(settings);
 
 	if (!settings->NumMonitorIds)
 		return TRUE;
@@ -136,24 +140,24 @@ BOOL xf_detect_monitors(xfContext* xfc, UINT32* pMaxWidth, UINT32* pMaxHeight)
 	int nmonitors = 0;
 	int monitor_index = 0;
 	BOOL primaryMonitorFound = FALSE;
-	VIRTUAL_SCREEN* vscreen;
-	rdpSettings* settings;
-	int mouse_x, mouse_y, _dummy_i;
-	Window _dummy_w;
+	VIRTUAL_SCREEN* vscreen = NULL;
+	rdpSettings* settings = NULL;
+	int mouse_x = 0, mouse_y = 0, _dummy_i = 0;
+	Window _dummy_w = 0;
 	int current_monitor = 0;
-	Screen* screen;
+	Screen* screen = NULL;
 #if defined WITH_XINERAMA || defined WITH_XRANDR
-	int major, minor;
+	int major = 0, minor = 0;
 #endif
 #if defined(USABLE_XRANDR)
 	XRRMonitorInfo* rrmonitors = NULL;
 	BOOL useXRandr = FALSE;
 #endif
 
-	if (!xfc || !pMaxWidth || !pMaxHeight || !xfc->context.settings)
+	if (!xfc || !pMaxWidth || !pMaxHeight || !xfc->common.context.settings)
 		return FALSE;
 
-	settings = xfc->context.settings;
+	settings = xfc->common.context.settings;
 	vscreen = &xfc->vscreen;
 	*pMaxWidth = settings->DesktopWidth;
 	*pMaxHeight = settings->DesktopHeight;
@@ -528,7 +532,6 @@ BOOL xf_detect_monitors(xfContext* xfc, UINT32* pMaxWidth, UINT32* pMaxHeight)
 				settings->MonitorDefArray[j].is_primary = TRUE;
 				settings->MonitorLocalShiftX = settings->MonitorDefArray[j].x;
 				settings->MonitorLocalShiftY = settings->MonitorDefArray[j].y;
-				primaryMonitorFound = TRUE;
 			}
 			else
 			{

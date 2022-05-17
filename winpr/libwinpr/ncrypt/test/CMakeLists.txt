@@ -4,7 +4,9 @@ set(MODULE_PREFIX "TEST_NCRYPT")
 set(${MODULE_PREFIX}_DRIVER ${MODULE_NAME}.c)
 
 set(${MODULE_PREFIX}_TESTS
-	TestNCryptSmartcard.c)
+	TestNCryptSmartcard.c
+	TestNCryptProviders.c
+)
 
 create_test_sourcelist(${MODULE_PREFIX}_SRCS
 	${${MODULE_PREFIX}_DRIVER}
@@ -19,7 +21,7 @@ foreach(test ${${MODULE_PREFIX}_TESTS})
 	add_test(${TestName} ${TESTING_OUTPUT_DIRECTORY}/${MODULE_NAME} ${TestName})
 endforeach()
 
-target_link_libraries(${MODULE_NAME} winpr)
+target_link_libraries(${MODULE_NAME} winpr ${OPENSSL_LIBRARIES})
 if(WIN32) 
 	target_link_libraries(${MODULE_NAME} ncrypt)
 endif()

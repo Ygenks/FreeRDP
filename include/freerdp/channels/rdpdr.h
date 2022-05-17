@@ -43,6 +43,14 @@
 #define RDPDR_DEVICE_IO_CONTROL_REQ_HDR_LENGTH 32
 #define RDPDR_DEVICE_IO_CONTROL_RSP_HDR_LENGTH 4
 
+#define RDPDR_VERSION_MAJOR 0x0001
+
+#define RDPDR_VERSION_MINOR_RDP50 0x0002
+#define RDPDR_VERSION_MINOR_RDP51 0x0005
+#define RDPDR_VERSION_MINOR_RDP52 0x000A
+#define RDPDR_VERSION_MINOR_RDP6X 0x000C
+#define RDPDR_VERSION_MINOR_RDP10X 0x000D
+
 /* RDPDR_HEADER.Component */
 enum RDPDR_CTYP
 {
@@ -302,9 +310,9 @@ enum FILE_FS_INFORMATION_CLASS
 };
 #endif
 
-typedef struct _DEVICE DEVICE;
-typedef struct _IRP IRP;
-typedef struct _DEVMAN DEVMAN;
+typedef struct S_DEVICE DEVICE;
+typedef struct S_IRP IRP;
+typedef struct S_DEVMAN DEVMAN;
 
 typedef UINT (*pcCustomComponentRequest)(DEVICE* device, UINT16 component, UINT16 packetId,
                                          wStream* s);
@@ -312,7 +320,7 @@ typedef UINT (*pcIRPRequest)(DEVICE* device, IRP* irp);
 typedef UINT (*pcInitDevice)(DEVICE* device);
 typedef UINT (*pcFreeDevice)(DEVICE* device);
 
-struct _DEVICE
+struct S_DEVICE
 {
 	UINT32 id;
 
@@ -328,7 +336,7 @@ struct _DEVICE
 
 typedef UINT (*pcIRPResponse)(IRP* irp);
 
-struct _IRP
+struct S_IRP
 {
 	WINPR_SLIST_ENTRY ItemEntry;
 
@@ -350,7 +358,7 @@ struct _IRP
 	BOOL cancelled;
 };
 
-struct _DEVMAN
+struct S_DEVMAN
 {
 	void* plugin;
 	UINT32 id_sequence;
@@ -359,15 +367,14 @@ struct _DEVMAN
 
 typedef UINT (*pcRegisterDevice)(DEVMAN* devman, DEVICE* device);
 
-struct _DEVICE_SERVICE_ENTRY_POINTS
+typedef struct
 {
 	DEVMAN* devman;
 
 	pcRegisterDevice RegisterDevice;
 	RDPDR_DEVICE* device;
 	rdpContext* rdpcontext;
-};
-typedef struct _DEVICE_SERVICE_ENTRY_POINTS DEVICE_SERVICE_ENTRY_POINTS;
+} DEVICE_SERVICE_ENTRY_POINTS;
 typedef DEVICE_SERVICE_ENTRY_POINTS* PDEVICE_SERVICE_ENTRY_POINTS;
 
 typedef UINT (*PDEVICE_SERVICE_ENTRY)(PDEVICE_SERVICE_ENTRY_POINTS);

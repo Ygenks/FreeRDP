@@ -25,6 +25,8 @@ set(MODULE_PREFIX "FREERDP_SERVER_PROXY")
 
 set(${MODULE_PREFIX}_SRCS
   pf_context.c
+  pf_channel.c
+  pf_channel.h
   pf_client.c
   pf_client.h
   pf_input.c
@@ -40,6 +42,9 @@ set(${MODULE_PREFIX}_SRCS
   )
 
 set(PROXY_APP_SRCS freerdp_proxy.c)
+
+option(WITH_PROXY_EMULATE_SMARTCARD "Compile proxy smartcard emulation" OFF)
+add_subdirectory("channels")
 
 # On windows create dll version information.
 # Vendor, product and year are already set in top level CMakeLists.txt
@@ -58,7 +63,7 @@ if (WIN32)
   list(APPEND PROXY_APP_SRCS ${CMAKE_CURRENT_BINARY_DIR}/version.rc)
 endif()
 
-add_library(${MODULE_NAME} ${${MODULE_PREFIX}_SRCS})
+add_library(${MODULE_NAME} ${${MODULE_PREFIX}_SRCS} $<TARGET_OBJECTS:pf_channels>)
 set_target_properties(${MODULE_NAME} PROPERTIES OUTPUT_NAME ${MODULE_NAME}${FREERDP_API_VERSION})
 
 if (WITH_LIBRARY_VERSIONING)
@@ -67,14 +72,6 @@ endif()
 
 set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} freerdp-server)
 set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} freerdp-client)
-if (NOT BUILTIN_CHANNELS)
-    set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} rdpgfx-client)
-    get_target_property(CUR_INSTALL_RPATH ${MODULE_NAME} INSTALL_RPATH)
-    if (NOT APPLE)
-        set(CUR_INSTALL_RPATH "${CUR_INSTALL_RPATH}:\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}/freerdp${FREERDP_VERSION_MAJOR}")
-    endif()
-    set_target_properties(${MODULE_NAME} PROPERTIES INSTALL_RPATH ${CUR_INSTALL_RPATH})
-endif()
 set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} winpr freerdp)
 
 target_link_libraries(${MODULE_NAME} ${${MODULE_PREFIX}_LIBS})
@@ -113,3 +110,4 @@ option(WITH_PROXY_MODULES "Compile proxy modules" ON)
 if (WITH_PROXY_MODULES)
   add_subdirectory("modules")
 endif()
+

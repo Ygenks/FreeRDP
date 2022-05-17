@@ -19,9 +19,7 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <freerdp/config.h>
 
 #include "window.h"
 
@@ -513,7 +511,7 @@ static INLINE BOOL update_read_coord(wStream* s, INT32* coord, BOOL delta)
 
 	if (delta)
 	{
-		if (Stream_GetRemainingLength(s) < 1)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
 
 		Stream_Read_INT8(s, lsi8);
@@ -521,7 +519,7 @@ static INLINE BOOL update_read_coord(wStream* s, INT32* coord, BOOL delta)
 	}
 	else
 	{
-		if (Stream_GetRemainingLength(s) < 2)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 2))
 			return FALSE;
 
 		Stream_Read_INT16(s, lsi16);
@@ -539,7 +537,7 @@ static INLINE BOOL update_read_color(wStream* s, UINT32* color)
 {
 	BYTE byte;
 
-	if (Stream_GetRemainingLength(s) < 3)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 3))
 		return FALSE;
 
 	*color = 0;
@@ -566,7 +564,7 @@ static INLINE BOOL update_read_colorref(wStream* s, UINT32* color)
 {
 	BYTE byte;
 
-	if (Stream_GetRemainingLength(s) < 4)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
 		return FALSE;
 
 	*color = 0;
@@ -597,14 +595,14 @@ static INLINE BOOL update_read_2byte_unsigned(wStream* s, UINT32* value)
 {
 	BYTE byte;
 
-	if (Stream_GetRemainingLength(s) < 1)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 		return FALSE;
 
 	Stream_Read_UINT8(s, byte);
 
 	if (byte & 0x80)
 	{
-		if (Stream_GetRemainingLength(s) < 1)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
 
 		*value = (byte & 0x7F) << 8;
@@ -645,7 +643,7 @@ static INLINE BOOL update_read_2byte_signed(wStream* s, INT32* value)
 	BYTE byte;
 	BOOL negative;
 
-	if (Stream_GetRemainingLength(s) < 1)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 		return FALSE;
 
 	Stream_Read_UINT8(s, byte);
@@ -654,7 +652,7 @@ static INLINE BOOL update_read_2byte_signed(wStream* s, INT32* value)
 
 	if (byte & 0x80)
 	{
-		if (Stream_GetRemainingLength(s) < 1)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
 
 		Stream_Read_UINT8(s, byte);
@@ -708,13 +706,13 @@ static INLINE BOOL update_read_4byte_unsigned(wStream* s, UINT32* value)
 	BYTE byte;
 	BYTE count;
 
-	if (Stream_GetRemainingLength(s) < 1)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 		return FALSE;
 
 	Stream_Read_UINT8(s, byte);
 	count = (byte & 0xC0) >> 6;
 
-	if (Stream_GetRemainingLength(s) < count)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, count))
 		return FALSE;
 
 	switch (count)
@@ -797,11 +795,8 @@ static INLINE BOOL update_read_delta(wStream* s, INT32* value)
 {
 	BYTE byte;
 
-	if (Stream_GetRemainingLength(s) < 1)
-	{
-		WLog_ERR(TAG, "Stream_GetRemainingLength(s) < 1");
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 		return FALSE;
-	}
 
 	Stream_Read_UINT8(s, byte);
 
@@ -812,11 +807,8 @@ static INLINE BOOL update_read_delta(wStream* s, INT32* value)
 
 	if (byte & 0x80)
 	{
-		if (Stream_GetRemainingLength(s) < 1)
-		{
-			WLog_ERR(TAG, "Stream_GetRemainingLength(s) < 1");
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
-		}
 
 		Stream_Read_UINT8(s, byte);
 		*value = (*value << 8) | byte;
@@ -848,7 +840,7 @@ static INLINE BOOL update_read_brush(wStream* s, rdpBrush* brush, BYTE fieldFlag
 {
 	if (fieldFlags & ORDER_FIELD_01)
 	{
-		if (Stream_GetRemainingLength(s) < 1)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
 
 		Stream_Read_UINT8(s, brush->x);
@@ -856,7 +848,7 @@ static INLINE BOOL update_read_brush(wStream* s, rdpBrush* brush, BYTE fieldFlag
 
 	if (fieldFlags & ORDER_FIELD_02)
 	{
-		if (Stream_GetRemainingLength(s) < 1)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
 
 		Stream_Read_UINT8(s, brush->y);
@@ -864,7 +856,7 @@ static INLINE BOOL update_read_brush(wStream* s, rdpBrush* brush, BYTE fieldFlag
 
 	if (fieldFlags & ORDER_FIELD_03)
 	{
-		if (Stream_GetRemainingLength(s) < 1)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
 
 		Stream_Read_UINT8(s, brush->style);
@@ -872,7 +864,7 @@ static INLINE BOOL update_read_brush(wStream* s, rdpBrush* brush, BYTE fieldFlag
 
 	if (fieldFlags & ORDER_FIELD_04)
 	{
-		if (Stream_GetRemainingLength(s) < 1)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
 
 		Stream_Read_UINT8(s, brush->hatch);
@@ -891,7 +883,7 @@ static INLINE BOOL update_read_brush(wStream* s, rdpBrush* brush, BYTE fieldFlag
 
 	if (fieldFlags & ORDER_FIELD_05)
 	{
-		if (Stream_GetRemainingLength(s) < 7)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 7))
 			return FALSE;
 
 		brush->data = (BYTE*)brush->p8x8;
@@ -971,7 +963,7 @@ static INLINE BOOL update_read_delta_rects(wStream* s, DELTA_RECT* rectangles, U
 
 	zeroBitsSize = ((number + 1) / 2);
 
-	if (Stream_GetRemainingLength(s) < zeroBitsSize)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, zeroBitsSize))
 		return FALSE;
 
 	Stream_GetPointer(s, zeroBits);
@@ -1020,20 +1012,17 @@ static INLINE BOOL update_read_delta_rects(wStream* s, DELTA_RECT* rectangles, U
 
 	return TRUE;
 }
-static INLINE BOOL update_read_delta_points(wStream* s, DELTA_POINT* points, int number, INT16 x,
+
+static INLINE BOOL update_read_delta_points(wStream* s, DELTA_POINT* points, UINT32 number, INT16 x,
                                             INT16 y)
 {
-	int i;
+	UINT32 i;
 	BYTE flags = 0;
 	BYTE* zeroBits;
-	UINT32 zeroBitsSize;
-	zeroBitsSize = ((number + 3) / 4);
+	UINT32 zeroBitsSize = ((number + 3) / 4);
 
-	if (Stream_GetRemainingLength(s) < zeroBitsSize)
-	{
-		WLog_ERR(TAG, "Stream_GetRemainingLength(s) < %" PRIu32 "", zeroBitsSize);
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, zeroBitsSize))
 		return FALSE;
-	}
 
 	Stream_GetPointer(s, zeroBits);
 	Stream_Seek(s, zeroBitsSize);
@@ -1074,7 +1063,7 @@ static INLINE BOOL read_order_field_byte(const ORDER_INFO* orderInfo, wStream* s
 {
 	if (!order_field_flag_is_set(orderInfo, number))
 		return TRUE;
-	if (Stream_GetRemainingLength(s) < 1)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 		return FALSE;
 	Stream_Read_UINT8(s, *target);
 	return TRUE;
@@ -1085,7 +1074,7 @@ static INLINE BOOL read_order_field_2bytes(const ORDER_INFO* orderInfo, wStream*
 {
 	if (!order_field_flag_is_set(orderInfo, number))
 		return TRUE;
-	if (Stream_GetRemainingLength(s) < 2)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 2))
 		return FALSE;
 	Stream_Read_UINT8(s, *target1);
 	Stream_Read_UINT8(s, *target2);
@@ -1098,7 +1087,7 @@ static INLINE BOOL read_order_field_uint16(const ORDER_INFO* orderInfo, wStream*
 	if (!order_field_flag_is_set(orderInfo, number))
 		return TRUE;
 
-	if (Stream_GetRemainingLength(s) < 2)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 2))
 		return FALSE;
 
 	Stream_Read_UINT16(s, *target);
@@ -1111,7 +1100,7 @@ static INLINE BOOL read_order_field_int16(const ORDER_INFO* orderInfo, wStream* 
 	if (!order_field_flag_is_set(orderInfo, number))
 		return TRUE;
 
-	if (Stream_GetRemainingLength(s) < 2)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 2))
 		return FALSE;
 
 	Stream_Read_INT16(s, *target);
@@ -1123,7 +1112,7 @@ static INLINE BOOL read_order_field_uint32(const ORDER_INFO* orderInfo, wStream*
 {
 	if (!order_field_flag_is_set(orderInfo, number))
 		return TRUE;
-	if (Stream_GetRemainingLength(s) < 4)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
 		return FALSE;
 
 	Stream_Read_UINT32(s, *target);
@@ -1156,7 +1145,7 @@ static INLINE BOOL read_order_field_color(const ORDER_INFO* orderInfo, wStream* 
 }
 static INLINE BOOL FIELD_SKIP_BUFFER16(wStream* s, UINT32 TARGET_LEN)
 {
-	if (Stream_GetRemainingLength(s) < 2)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 2))
 		return FALSE;
 
 	Stream_Read_UINT16(s, TARGET_LEN);
@@ -1180,10 +1169,14 @@ static BOOL update_read_dstblt_order(wStream* s, const ORDER_INFO* orderInfo, DS
 		return TRUE;
 	return FALSE;
 }
-int update_approximate_dstblt_order(ORDER_INFO* orderInfo, const DSTBLT_ORDER* dstblt)
+
+size_t update_approximate_dstblt_order(ORDER_INFO* orderInfo, const DSTBLT_ORDER* dstblt)
 {
+	WINPR_UNUSED(orderInfo);
+	WINPR_UNUSED(dstblt);
 	return 32;
 }
+
 BOOL update_write_dstblt_order(wStream* s, ORDER_INFO* orderInfo, const DSTBLT_ORDER* dstblt)
 {
 	if (!Stream_EnsureRemainingCapacity(s, update_approximate_dstblt_order(orderInfo, dstblt)))
@@ -1202,6 +1195,7 @@ BOOL update_write_dstblt_order(wStream* s, ORDER_INFO* orderInfo, const DSTBLT_O
 	Stream_Write_UINT8(s, dstblt->bRop);
 	return TRUE;
 }
+
 static BOOL update_read_patblt_order(wStream* s, const ORDER_INFO* orderInfo, PATBLT_ORDER* patblt)
 {
 	if (read_order_field_coord(orderInfo, s, 1, &patblt->nLeftRect, FALSE) &&
@@ -1215,10 +1209,14 @@ static BOOL update_read_patblt_order(wStream* s, const ORDER_INFO* orderInfo, PA
 		return TRUE;
 	return FALSE;
 }
-int update_approximate_patblt_order(ORDER_INFO* orderInfo, PATBLT_ORDER* patblt)
+
+size_t update_approximate_patblt_order(ORDER_INFO* orderInfo, PATBLT_ORDER* patblt)
 {
+	WINPR_UNUSED(orderInfo);
+	WINPR_UNUSED(patblt);
 	return 32;
 }
+
 BOOL update_write_patblt_order(wStream* s, ORDER_INFO* orderInfo, PATBLT_ORDER* patblt)
 {
 	if (!Stream_EnsureRemainingCapacity(s, update_approximate_patblt_order(orderInfo, patblt)))
@@ -1247,6 +1245,7 @@ BOOL update_write_patblt_order(wStream* s, ORDER_INFO* orderInfo, PATBLT_ORDER* 
 	update_write_brush(s, &patblt->brush, orderInfo->fieldFlags >> 7);
 	return TRUE;
 }
+
 static BOOL update_read_scrblt_order(wStream* s, const ORDER_INFO* orderInfo, SCRBLT_ORDER* scrblt)
 {
 	if (read_order_field_coord(orderInfo, s, 1, &scrblt->nLeftRect, FALSE) &&
@@ -1259,10 +1258,14 @@ static BOOL update_read_scrblt_order(wStream* s, const ORDER_INFO* orderInfo, SC
 		return TRUE;
 	return FALSE;
 }
-int update_approximate_scrblt_order(ORDER_INFO* orderInfo, const SCRBLT_ORDER* scrblt)
+
+size_t update_approximate_scrblt_order(ORDER_INFO* orderInfo, const SCRBLT_ORDER* scrblt)
 {
+	WINPR_UNUSED(orderInfo);
+	WINPR_UNUSED(scrblt);
 	return 32;
 }
+
 BOOL update_write_scrblt_order(wStream* s, ORDER_INFO* orderInfo, const SCRBLT_ORDER* scrblt)
 {
 	if (!Stream_EnsureRemainingCapacity(s, update_approximate_scrblt_order(orderInfo, scrblt)))
@@ -1297,7 +1300,7 @@ static BOOL update_read_opaque_rect_order(wStream* s, const ORDER_INFO* orderInf
 
 	if ((orderInfo->fieldFlags & ORDER_FIELD_05) != 0)
 	{
-		if (Stream_GetRemainingLength(s) < 1)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
 
 		Stream_Read_UINT8(s, byte);
@@ -1306,7 +1309,7 @@ static BOOL update_read_opaque_rect_order(wStream* s, const ORDER_INFO* orderInf
 
 	if ((orderInfo->fieldFlags & ORDER_FIELD_06) != 0)
 	{
-		if (Stream_GetRemainingLength(s) < 1)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
 
 		Stream_Read_UINT8(s, byte);
@@ -1315,7 +1318,7 @@ static BOOL update_read_opaque_rect_order(wStream* s, const ORDER_INFO* orderInf
 
 	if ((orderInfo->fieldFlags & ORDER_FIELD_07) != 0)
 	{
-		if (Stream_GetRemainingLength(s) < 1)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
 
 		Stream_Read_UINT8(s, byte);
@@ -1324,16 +1327,20 @@ static BOOL update_read_opaque_rect_order(wStream* s, const ORDER_INFO* orderInf
 
 	return TRUE;
 }
-int update_approximate_opaque_rect_order(ORDER_INFO* orderInfo,
-                                         const OPAQUE_RECT_ORDER* opaque_rect)
+
+size_t update_approximate_opaque_rect_order(ORDER_INFO* orderInfo,
+                                            const OPAQUE_RECT_ORDER* opaque_rect)
 {
+	WINPR_UNUSED(orderInfo);
+	WINPR_UNUSED(opaque_rect);
 	return 32;
 }
+
 BOOL update_write_opaque_rect_order(wStream* s, ORDER_INFO* orderInfo,
                                     const OPAQUE_RECT_ORDER* opaque_rect)
 {
 	BYTE byte;
-	int inf = update_approximate_opaque_rect_order(orderInfo, opaque_rect);
+	size_t inf = update_approximate_opaque_rect_order(orderInfo, opaque_rect);
 
 	if (!Stream_EnsureRemainingCapacity(s, inf))
 		return FALSE;
@@ -1359,6 +1366,7 @@ BOOL update_write_opaque_rect_order(wStream* s, ORDER_INFO* orderInfo,
 	Stream_Write_UINT8(s, byte);
 	return TRUE;
 }
+
 static BOOL update_read_draw_nine_grid_order(wStream* s, const ORDER_INFO* orderInfo,
                                              DRAW_NINE_GRID_ORDER* draw_nine_grid)
 {
@@ -1370,6 +1378,7 @@ static BOOL update_read_draw_nine_grid_order(wStream* s, const ORDER_INFO* order
 		return TRUE;
 	return FALSE;
 }
+
 static BOOL update_read_multi_dstblt_order(wStream* s, const ORDER_INFO* orderInfo,
                                            MULTI_DSTBLT_ORDER* multi_dstblt)
 {
@@ -1383,7 +1392,7 @@ static BOOL update_read_multi_dstblt_order(wStream* s, const ORDER_INFO* orderIn
 
 	if ((orderInfo->fieldFlags & ORDER_FIELD_07) != 0)
 	{
-		if (Stream_GetRemainingLength(s) < 2)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 2))
 			return FALSE;
 
 		Stream_Read_UINT16(s, multi_dstblt->cbData);
@@ -1392,6 +1401,7 @@ static BOOL update_read_multi_dstblt_order(wStream* s, const ORDER_INFO* orderIn
 
 	return TRUE;
 }
+
 static BOOL update_read_multi_patblt_order(wStream* s, const ORDER_INFO* orderInfo,
                                            MULTI_PATBLT_ORDER* multi_patblt)
 {
@@ -1412,7 +1422,7 @@ static BOOL update_read_multi_patblt_order(wStream* s, const ORDER_INFO* orderIn
 
 	if ((orderInfo->fieldFlags & ORDER_FIELD_14) != 0)
 	{
-		if (Stream_GetRemainingLength(s) < 2)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 2))
 			return FALSE;
 
 		Stream_Read_UINT16(s, multi_patblt->cbData);
@@ -1423,6 +1433,7 @@ static BOOL update_read_multi_patblt_order(wStream* s, const ORDER_INFO* orderIn
 
 	return TRUE;
 }
+
 static BOOL update_read_multi_scrblt_order(wStream* s, const ORDER_INFO* orderInfo,
                                            MULTI_SCRBLT_ORDER* multi_scrblt)
 {
@@ -1438,7 +1449,7 @@ static BOOL update_read_multi_scrblt_order(wStream* s, const ORDER_INFO* orderIn
 
 	if ((orderInfo->fieldFlags & ORDER_FIELD_09) != 0)
 	{
-		if (Stream_GetRemainingLength(s) < 2)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 2))
 			return FALSE;
 
 		Stream_Read_UINT16(s, multi_scrblt->cbData);
@@ -1447,6 +1458,7 @@ static BOOL update_read_multi_scrblt_order(wStream* s, const ORDER_INFO* orderIn
 
 	return TRUE;
 }
+
 static BOOL update_read_multi_opaque_rect_order(wStream* s, const ORDER_INFO* orderInfo,
                                                 MULTI_OPAQUE_RECT_ORDER* multi_opaque_rect)
 {
@@ -1459,7 +1471,7 @@ static BOOL update_read_multi_opaque_rect_order(wStream* s, const ORDER_INFO* or
 
 	if ((orderInfo->fieldFlags & ORDER_FIELD_05) != 0)
 	{
-		if (Stream_GetRemainingLength(s) < 1)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
 
 		Stream_Read_UINT8(s, byte);
@@ -1468,7 +1480,7 @@ static BOOL update_read_multi_opaque_rect_order(wStream* s, const ORDER_INFO* or
 
 	if ((orderInfo->fieldFlags & ORDER_FIELD_06) != 0)
 	{
-		if (Stream_GetRemainingLength(s) < 1)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
 
 		Stream_Read_UINT8(s, byte);
@@ -1477,7 +1489,7 @@ static BOOL update_read_multi_opaque_rect_order(wStream* s, const ORDER_INFO* or
 
 	if ((orderInfo->fieldFlags & ORDER_FIELD_07) != 0)
 	{
-		if (Stream_GetRemainingLength(s) < 1)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
 
 		Stream_Read_UINT8(s, byte);
@@ -1489,7 +1501,7 @@ static BOOL update_read_multi_opaque_rect_order(wStream* s, const ORDER_INFO* or
 
 	if ((orderInfo->fieldFlags & ORDER_FIELD_09) != 0)
 	{
-		if (Stream_GetRemainingLength(s) < 2)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 2))
 			return FALSE;
 
 		Stream_Read_UINT16(s, multi_opaque_rect->cbData);
@@ -1499,6 +1511,7 @@ static BOOL update_read_multi_opaque_rect_order(wStream* s, const ORDER_INFO* or
 
 	return TRUE;
 }
+
 static BOOL update_read_multi_draw_nine_grid_order(wStream* s, const ORDER_INFO* orderInfo,
                                                    MULTI_DRAW_NINE_GRID_ORDER* multi_draw_nine_grid)
 {
@@ -1512,7 +1525,7 @@ static BOOL update_read_multi_draw_nine_grid_order(wStream* s, const ORDER_INFO*
 
 	if ((orderInfo->fieldFlags & ORDER_FIELD_07) != 0)
 	{
-		if (Stream_GetRemainingLength(s) < 2)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 2))
 			return FALSE;
 
 		Stream_Read_UINT16(s, multi_draw_nine_grid->cbData);
@@ -1538,10 +1551,14 @@ static BOOL update_read_line_to_order(wStream* s, const ORDER_INFO* orderInfo,
 		return TRUE;
 	return FALSE;
 }
-int update_approximate_line_to_order(ORDER_INFO* orderInfo, const LINE_TO_ORDER* line_to)
+
+size_t update_approximate_line_to_order(ORDER_INFO* orderInfo, const LINE_TO_ORDER* line_to)
 {
+	WINPR_UNUSED(orderInfo);
+	WINPR_UNUSED(line_to);
 	return 32;
 }
+
 BOOL update_write_line_to_order(wStream* s, ORDER_INFO* orderInfo, const LINE_TO_ORDER* line_to)
 {
 	if (!Stream_EnsureRemainingCapacity(s, update_approximate_line_to_order(orderInfo, line_to)))
@@ -1570,6 +1587,7 @@ BOOL update_write_line_to_order(wStream* s, ORDER_INFO* orderInfo, const LINE_TO
 	update_write_color(s, line_to->penColor);
 	return TRUE;
 }
+
 static BOOL update_read_polyline_order(wStream* s, const ORDER_INFO* orderInfo,
                                        POLYLINE_ORDER* polyline)
 {
@@ -1590,11 +1608,8 @@ static BOOL update_read_polyline_order(wStream* s, const ORDER_INFO* orderInfo,
 		if (new_num == 0)
 			return FALSE;
 
-		if (Stream_GetRemainingLength(s) < 1)
-		{
-			WLog_ERR(TAG, "Stream_GetRemainingLength(s) < 1");
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
-		}
 
 		Stream_Read_UINT8(s, polyline->cbData);
 		new_points = (DELTA_POINT*)realloc(polyline->points, sizeof(DELTA_POINT) * new_num);
@@ -1613,6 +1628,7 @@ static BOOL update_read_polyline_order(wStream* s, const ORDER_INFO* orderInfo,
 
 	return TRUE;
 }
+
 static BOOL update_read_memblt_order(wStream* s, const ORDER_INFO* orderInfo, MEMBLT_ORDER* memblt)
 {
 	if (!s || !orderInfo || !memblt)
@@ -1633,10 +1649,14 @@ static BOOL update_read_memblt_order(wStream* s, const ORDER_INFO* orderInfo, ME
 	memblt->bitmap = NULL;
 	return TRUE;
 }
-int update_approximate_memblt_order(ORDER_INFO* orderInfo, const MEMBLT_ORDER* memblt)
+
+size_t update_approximate_memblt_order(ORDER_INFO* orderInfo, const MEMBLT_ORDER* memblt)
 {
+	WINPR_UNUSED(orderInfo);
+	WINPR_UNUSED(memblt);
 	return 64;
 }
+
 BOOL update_write_memblt_order(wStream* s, ORDER_INFO* orderInfo, const MEMBLT_ORDER* memblt)
 {
 	UINT16 cacheId;
@@ -1724,12 +1744,12 @@ static BOOL update_read_glyph_index_order(wStream* s, const ORDER_INFO* orderInf
 
 	if ((orderInfo->fieldFlags & ORDER_FIELD_22) != 0)
 	{
-		if (Stream_GetRemainingLength(s) < 1)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
 
 		Stream_Read_UINT8(s, glyph_index->cbData);
 
-		if (Stream_GetRemainingLength(s) < glyph_index->cbData)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, glyph_index->cbData))
 			return FALSE;
 
 		CopyMemory(glyph_index->data, Stream_Pointer(s), glyph_index->cbData);
@@ -1738,15 +1758,19 @@ static BOOL update_read_glyph_index_order(wStream* s, const ORDER_INFO* orderInf
 
 	return TRUE;
 }
-int update_approximate_glyph_index_order(ORDER_INFO* orderInfo,
-                                         const GLYPH_INDEX_ORDER* glyph_index)
+
+size_t update_approximate_glyph_index_order(ORDER_INFO* orderInfo,
+                                            const GLYPH_INDEX_ORDER* glyph_index)
 {
+	WINPR_UNUSED(orderInfo);
+	WINPR_UNUSED(glyph_index);
 	return 64;
 }
+
 BOOL update_write_glyph_index_order(wStream* s, ORDER_INFO* orderInfo,
                                     GLYPH_INDEX_ORDER* glyph_index)
 {
-	int inf = update_approximate_glyph_index_order(orderInfo, glyph_index);
+	size_t inf = update_approximate_glyph_index_order(orderInfo, glyph_index);
 
 	if (!Stream_EnsureRemainingCapacity(s, inf))
 		return FALSE;
@@ -1817,12 +1841,12 @@ static BOOL update_read_fast_index_order(wStream* s, const ORDER_INFO* orderInfo
 
 	if ((orderInfo->fieldFlags & ORDER_FIELD_15) != 0)
 	{
-		if (Stream_GetRemainingLength(s) < 1)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
 
 		Stream_Read_UINT8(s, fast_index->cbData);
 
-		if (Stream_GetRemainingLength(s) < fast_index->cbData)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, fast_index->cbData))
 			return FALSE;
 
 		CopyMemory(fast_index->data, Stream_Pointer(s), fast_index->cbData);
@@ -1860,7 +1884,7 @@ static BOOL update_read_fast_glyph_order(wStream* s, const ORDER_INFO* orderInfo
 		const BYTE* src;
 		wStream subbuffer;
 		wStream* sub;
-		if (Stream_GetRemainingLength(s) < 1)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
 
 		Stream_Read_UINT8(s, fastGlyph->cbData);
@@ -1929,7 +1953,7 @@ static BOOL update_read_polygon_sc_order(wStream* s, const ORDER_INFO* orderInfo
 		if (num == 0)
 			return FALSE;
 
-		if (Stream_GetRemainingLength(s) < 1)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
 
 		Stream_Read_UINT8(s, polygon_sc->cbData);
@@ -1971,7 +1995,7 @@ static BOOL update_read_polygon_cb_order(wStream* s, const ORDER_INFO* orderInfo
 		if (num == 0)
 			return FALSE;
 
-		if (Stream_GetRemainingLength(s) < 1)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
 
 		Stream_Read_UINT8(s, polygon_cb->cbData);
@@ -2025,6 +2049,7 @@ static CACHE_BITMAP_ORDER* update_read_cache_bitmap_order(rdpUpdate* update, wSt
                                                           BOOL compressed, UINT16 flags)
 {
 	CACHE_BITMAP_ORDER* cache_bitmap;
+	rdp_update_internal* up = update_cast(update);
 
 	if (!update || !s)
 		return NULL;
@@ -2034,7 +2059,7 @@ static CACHE_BITMAP_ORDER* update_read_cache_bitmap_order(rdpUpdate* update, wSt
 	if (!cache_bitmap)
 		goto fail;
 
-	if (Stream_GetRemainingLength(s) < 9)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 9))
 		goto fail;
 
 	Stream_Read_UINT8(s, cache_bitmap->cacheId);      /* cacheId (1 byte) */
@@ -2045,8 +2070,7 @@ static CACHE_BITMAP_ORDER* update_read_cache_bitmap_order(rdpUpdate* update, wSt
 
 	if ((cache_bitmap->bitmapBpp < 1) || (cache_bitmap->bitmapBpp > 32))
 	{
-		WLog_Print(update->log, WLOG_ERROR, "invalid bitmap bpp %" PRIu32 "",
-		           cache_bitmap->bitmapBpp);
+		WLog_Print(up->log, WLOG_ERROR, "invalid bitmap bpp %" PRIu32 "", cache_bitmap->bitmapBpp);
 		goto fail;
 	}
 
@@ -2059,7 +2083,7 @@ static CACHE_BITMAP_ORDER* update_read_cache_bitmap_order(rdpUpdate* update, wSt
 		{
 			BYTE* bitmapComprHdr = (BYTE*)&(cache_bitmap->bitmapComprHdr);
 
-			if (Stream_GetRemainingLength(s) < 8)
+			if (!Stream_CheckAndLogRequiredLength(TAG, s, 8))
 				goto fail;
 
 			Stream_Read(s, bitmapComprHdr, 8); /* bitmapComprHdr (8 bytes) */
@@ -2070,7 +2094,7 @@ static CACHE_BITMAP_ORDER* update_read_cache_bitmap_order(rdpUpdate* update, wSt
 	if (cache_bitmap->bitmapLength == 0)
 		goto fail;
 
-	if (Stream_GetRemainingLength(s) < cache_bitmap->bitmapLength)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, cache_bitmap->bitmapLength))
 		goto fail;
 
 	cache_bitmap->bitmapDataStream = malloc(cache_bitmap->bitmapLength);
@@ -2085,16 +2109,21 @@ fail:
 	free_cache_bitmap_order(update->context, cache_bitmap);
 	return NULL;
 }
-int update_approximate_cache_bitmap_order(const CACHE_BITMAP_ORDER* cache_bitmap, BOOL compressed,
-                                          UINT16* flags)
+
+size_t update_approximate_cache_bitmap_order(const CACHE_BITMAP_ORDER* cache_bitmap,
+                                             BOOL compressed, UINT16* flags)
 {
+	WINPR_ASSERT(cache_bitmap);
+	WINPR_UNUSED(compressed);
+	WINPR_UNUSED(flags);
 	return 64 + cache_bitmap->bitmapLength;
 }
+
 BOOL update_write_cache_bitmap_order(wStream* s, const CACHE_BITMAP_ORDER* cache_bitmap,
                                      BOOL compressed, UINT16* flags)
 {
 	UINT32 bitmapLength = cache_bitmap->bitmapLength;
-	int inf = update_approximate_cache_bitmap_order(cache_bitmap, compressed, flags);
+	size_t inf = update_approximate_cache_bitmap_order(cache_bitmap, compressed, flags);
 
 	if (!Stream_EnsureRemainingCapacity(s, inf))
 		return FALSE;
@@ -2130,6 +2159,7 @@ BOOL update_write_cache_bitmap_order(wStream* s, const CACHE_BITMAP_ORDER* cache
 
 	return TRUE;
 }
+
 static CACHE_BITMAP_V2_ORDER* update_read_cache_bitmap_v2_order(rdpUpdate* update, wStream* s,
                                                                 BOOL compressed, UINT16 flags)
 {
@@ -2154,7 +2184,7 @@ static CACHE_BITMAP_V2_ORDER* update_read_cache_bitmap_v2_order(rdpUpdate* updat
 
 	if (cache_bitmap_v2->flags & CBR2_PERSISTENT_KEY_PRESENT)
 	{
-		if (Stream_GetRemainingLength(s) < 8)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 8))
 			goto fail;
 
 		Stream_Read_UINT32(s, cache_bitmap_v2->key1); /* key1 (4 bytes) */
@@ -2186,7 +2216,7 @@ static CACHE_BITMAP_V2_ORDER* update_read_cache_bitmap_v2_order(rdpUpdate* updat
 	{
 		if (!(cache_bitmap_v2->flags & CBR2_NO_BITMAP_COMPRESSION_HDR))
 		{
-			if (Stream_GetRemainingLength(s) < 8)
+			if (!Stream_CheckAndLogRequiredLength(TAG, s, 8))
 				goto fail;
 
 			Stream_Read_UINT16(
@@ -2203,7 +2233,7 @@ static CACHE_BITMAP_V2_ORDER* update_read_cache_bitmap_v2_order(rdpUpdate* updat
 	if (cache_bitmap_v2->bitmapLength == 0)
 		goto fail;
 
-	if (Stream_GetRemainingLength(s) < cache_bitmap_v2->bitmapLength)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, cache_bitmap_v2->bitmapLength))
 		goto fail;
 
 	if (cache_bitmap_v2->bitmapLength == 0)
@@ -2221,11 +2251,17 @@ fail:
 	free_cache_bitmap_v2_order(update->context, cache_bitmap_v2);
 	return NULL;
 }
-int update_approximate_cache_bitmap_v2_order(CACHE_BITMAP_V2_ORDER* cache_bitmap_v2,
-                                             BOOL compressed, UINT16* flags)
+
+size_t update_approximate_cache_bitmap_v2_order(CACHE_BITMAP_V2_ORDER* cache_bitmap_v2,
+                                                BOOL compressed, UINT16* flags)
 {
+	WINPR_ASSERT(cache_bitmap_v2);
+	WINPR_UNUSED(flags);
+	WINPR_UNUSED(compressed);
+
 	return 64 + cache_bitmap_v2->bitmapLength;
 }
+
 BOOL update_write_cache_bitmap_v2_order(wStream* s, CACHE_BITMAP_V2_ORDER* cache_bitmap_v2,
                                         BOOL compressed, UINT16* flags)
 {
@@ -2306,6 +2342,7 @@ static CACHE_BITMAP_V3_ORDER* update_read_cache_bitmap_v3_order(rdpUpdate* updat
 	UINT32 new_len;
 	BYTE* new_data;
 	CACHE_BITMAP_V3_ORDER* cache_bitmap_v3;
+	rdp_update_internal* up = update_cast(update);
 
 	if (!update || !s)
 		return NULL;
@@ -2322,7 +2359,7 @@ static CACHE_BITMAP_V3_ORDER* update_read_cache_bitmap_v3_order(rdpUpdate* updat
 	if (!rc)
 		goto fail;
 
-	if (Stream_GetRemainingLength(s) < 21)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 21))
 		goto fail;
 
 	Stream_Read_UINT16(s, cache_bitmap_v3->cacheIndex); /* cacheIndex (2 bytes) */
@@ -2333,7 +2370,7 @@ static CACHE_BITMAP_V3_ORDER* update_read_cache_bitmap_v3_order(rdpUpdate* updat
 
 	if ((bitmapData->bpp < 1) || (bitmapData->bpp > 32))
 	{
-		WLog_Print(update->log, WLOG_ERROR, "invalid bpp value %" PRIu32 "", bitmapData->bpp);
+		WLog_Print(up->log, WLOG_ERROR, "invalid bpp value %" PRIu32 "", bitmapData->bpp);
 		goto fail;
 	}
 
@@ -2344,7 +2381,7 @@ static CACHE_BITMAP_V3_ORDER* update_read_cache_bitmap_v3_order(rdpUpdate* updat
 	Stream_Read_UINT16(s, bitmapData->height); /* height (2 bytes) */
 	Stream_Read_UINT32(s, new_len);            /* length (4 bytes) */
 
-	if ((new_len == 0) || (Stream_GetRemainingLength(s) < new_len))
+	if ((new_len == 0) || (!Stream_CheckAndLogRequiredLength(TAG, s, new_len)))
 		goto fail;
 
 	new_data = (BYTE*)realloc(bitmapData->data, new_len);
@@ -2360,11 +2397,14 @@ fail:
 	free_cache_bitmap_v3_order(update->context, cache_bitmap_v3);
 	return NULL;
 }
-int update_approximate_cache_bitmap_v3_order(CACHE_BITMAP_V3_ORDER* cache_bitmap_v3, UINT16* flags)
+
+size_t update_approximate_cache_bitmap_v3_order(CACHE_BITMAP_V3_ORDER* cache_bitmap_v3,
+                                                UINT16* flags)
 {
 	BITMAP_DATA_EX* bitmapData = &cache_bitmap_v3->bitmapData;
 	return 64 + bitmapData->length;
 }
+
 BOOL update_write_cache_bitmap_v3_order(wStream* s, CACHE_BITMAP_V3_ORDER* cache_bitmap_v3,
                                         UINT16* flags)
 {
@@ -2405,7 +2445,7 @@ static CACHE_COLOR_TABLE_ORDER* update_read_cache_color_table_order(rdpUpdate* u
 	if (!cache_color_table)
 		goto fail;
 
-	if (Stream_GetRemainingLength(s) < 3)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 3))
 		goto fail;
 
 	Stream_Read_UINT8(s, cache_color_table->cacheIndex);    /* cacheIndex (1 byte) */
@@ -2417,7 +2457,7 @@ static CACHE_COLOR_TABLE_ORDER* update_read_cache_color_table_order(rdpUpdate* u
 		goto fail;
 	}
 
-	if (Stream_GetRemainingLength(s) / 4 < cache_color_table->numberColors)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4ull * cache_color_table->numberColors))
 		goto fail;
 
 	colorTable = (UINT32*)&cache_color_table->colorTable;
@@ -2430,17 +2470,22 @@ fail:
 	free_cache_color_table_order(update->context, cache_color_table);
 	return NULL;
 }
-int update_approximate_cache_color_table_order(const CACHE_COLOR_TABLE_ORDER* cache_color_table,
-                                               UINT16* flags)
+
+size_t update_approximate_cache_color_table_order(const CACHE_COLOR_TABLE_ORDER* cache_color_table,
+                                                  UINT16* flags)
 {
+	WINPR_UNUSED(cache_color_table);
+	WINPR_UNUSED(flags);
+
 	return 16 + (256 * 4);
 }
+
 BOOL update_write_cache_color_table_order(wStream* s,
                                           const CACHE_COLOR_TABLE_ORDER* cache_color_table,
                                           UINT16* flags)
 {
 	size_t i;
-	int inf;
+	size_t inf;
 	const UINT32* colorTable;
 
 	if (cache_color_table->numberColors != 256)
@@ -2467,10 +2512,13 @@ static CACHE_GLYPH_ORDER* update_read_cache_glyph_order(rdpUpdate* update, wStre
 	UINT32 i;
 	CACHE_GLYPH_ORDER* cache_glyph_order = calloc(1, sizeof(CACHE_GLYPH_ORDER));
 
-	if (!cache_glyph_order || !update || !s)
+	WINPR_ASSERT(update);
+	WINPR_ASSERT(s);
+
+	if (!cache_glyph_order)
 		goto fail;
 
-	if (Stream_GetRemainingLength(s) < 2)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 2))
 		goto fail;
 
 	Stream_Read_UINT8(s, cache_glyph_order->cacheId); /* cacheId (1 byte) */
@@ -2480,7 +2528,7 @@ static CACHE_GLYPH_ORDER* update_read_cache_glyph_order(rdpUpdate* update, wStre
 	{
 		GLYPH_DATA* glyph = &cache_glyph_order->glyphData[i];
 
-		if (Stream_GetRemainingLength(s) < 10)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 10))
 			goto fail;
 
 		Stream_Read_UINT16(s, glyph->cacheIndex);
@@ -2491,7 +2539,7 @@ static CACHE_GLYPH_ORDER* update_read_cache_glyph_order(rdpUpdate* update, wStre
 		glyph->cb = ((glyph->cx + 7) / 8) * glyph->cy;
 		glyph->cb += ((glyph->cb % 4) > 0) ? 4 - (glyph->cb % 4) : 0;
 
-		if (Stream_GetRemainingLength(s) < glyph->cb)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, glyph->cb))
 			goto fail;
 
 		glyph->aj = (BYTE*)malloc(glyph->cb);
@@ -2509,7 +2557,7 @@ static CACHE_GLYPH_ORDER* update_read_cache_glyph_order(rdpUpdate* update, wStre
 		if (!cache_glyph_order->unicodeCharacters)
 			goto fail;
 
-		if (Stream_GetRemainingLength(s) < sizeof(WCHAR) * cache_glyph_order->cGlyphs)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, sizeof(WCHAR) * cache_glyph_order->cGlyphs))
 			goto fail;
 
 		Stream_Read_UTF16_String(s, cache_glyph_order->unicodeCharacters,
@@ -2521,16 +2569,20 @@ fail:
 	free_cache_glyph_order(update->context, cache_glyph_order);
 	return NULL;
 }
-int update_approximate_cache_glyph_order(const CACHE_GLYPH_ORDER* cache_glyph, UINT16* flags)
+
+size_t update_approximate_cache_glyph_order(const CACHE_GLYPH_ORDER* cache_glyph, UINT16* flags)
 {
+	WINPR_ASSERT(cache_glyph);
+	WINPR_UNUSED(flags);
 	return 2 + cache_glyph->cGlyphs * 32;
 }
+
 BOOL update_write_cache_glyph_order(wStream* s, const CACHE_GLYPH_ORDER* cache_glyph, UINT16* flags)
 {
-	int i, inf;
+	UINT32 i;
 	INT16 lsi16;
 	const GLYPH_DATA* glyph;
-	inf = update_approximate_cache_glyph_order(cache_glyph, flags);
+	size_t inf = update_approximate_cache_glyph_order(cache_glyph, flags);
 
 	if (!Stream_EnsureRemainingCapacity(s, inf))
 		return FALSE;
@@ -2538,7 +2590,7 @@ BOOL update_write_cache_glyph_order(wStream* s, const CACHE_GLYPH_ORDER* cache_g
 	Stream_Write_UINT8(s, cache_glyph->cacheId); /* cacheId (1 byte) */
 	Stream_Write_UINT8(s, cache_glyph->cGlyphs); /* cGlyphs (1 byte) */
 
-	for (i = 0; i < (int)cache_glyph->cGlyphs; i++)
+	for (i = 0; i < cache_glyph->cGlyphs; i++)
 	{
 		UINT32 cb;
 		glyph = &cache_glyph->glyphData[i];
@@ -2561,6 +2613,7 @@ BOOL update_write_cache_glyph_order(wStream* s, const CACHE_GLYPH_ORDER* cache_g
 
 	return TRUE;
 }
+
 static CACHE_GLYPH_V2_ORDER* update_read_cache_glyph_v2_order(rdpUpdate* update, wStream* s,
                                                               UINT16 flags)
 {
@@ -2578,7 +2631,7 @@ static CACHE_GLYPH_V2_ORDER* update_read_cache_glyph_v2_order(rdpUpdate* update,
 	{
 		GLYPH_DATA_V2* glyph = &cache_glyph_v2->glyphData[i];
 
-		if (Stream_GetRemainingLength(s) < 1)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			goto fail;
 
 		Stream_Read_UINT8(s, glyph->cacheIndex);
@@ -2593,7 +2646,7 @@ static CACHE_GLYPH_V2_ORDER* update_read_cache_glyph_v2_order(rdpUpdate* update,
 		glyph->cb = ((glyph->cx + 7) / 8) * glyph->cy;
 		glyph->cb += ((glyph->cb % 4) > 0) ? 4 - (glyph->cb % 4) : 0;
 
-		if (Stream_GetRemainingLength(s) < glyph->cb)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, glyph->cb))
 			goto fail;
 
 		glyph->aj = (BYTE*)malloc(glyph->cb);
@@ -2611,7 +2664,7 @@ static CACHE_GLYPH_V2_ORDER* update_read_cache_glyph_v2_order(rdpUpdate* update,
 		if (!cache_glyph_v2->unicodeCharacters)
 			goto fail;
 
-		if (Stream_GetRemainingLength(s) < sizeof(WCHAR) * cache_glyph_v2->cGlyphs)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, sizeof(WCHAR) * cache_glyph_v2->cGlyphs))
 			goto fail;
 
 		Stream_Read_UTF16_String(s, cache_glyph_v2->unicodeCharacters, cache_glyph_v2->cGlyphs);
@@ -2622,16 +2675,20 @@ fail:
 	free_cache_glyph_v2_order(update->context, cache_glyph_v2);
 	return NULL;
 }
-int update_approximate_cache_glyph_v2_order(const CACHE_GLYPH_V2_ORDER* cache_glyph_v2,
-                                            UINT16* flags)
+
+size_t update_approximate_cache_glyph_v2_order(const CACHE_GLYPH_V2_ORDER* cache_glyph_v2,
+                                               UINT16* flags)
 {
+	WINPR_ASSERT(cache_glyph_v2);
+	WINPR_UNUSED(flags);
 	return 8 + cache_glyph_v2->cGlyphs * 32;
 }
+
 BOOL update_write_cache_glyph_v2_order(wStream* s, const CACHE_GLYPH_V2_ORDER* cache_glyph_v2,
                                        UINT16* flags)
 {
-	UINT32 i, inf;
-	inf = update_approximate_cache_glyph_v2_order(cache_glyph_v2, flags);
+	UINT32 i;
+	size_t inf = update_approximate_cache_glyph_v2_order(cache_glyph_v2, flags);
 
 	if (!Stream_EnsureRemainingCapacity(s, inf))
 		return FALSE;
@@ -2672,7 +2729,7 @@ static BOOL update_decompress_brush(wStream* s, BYTE* output, size_t outSize, BY
 	const BYTE* palette = Stream_Pointer(s) + 16;
 	const size_t bytesPerPixel = ((bpp + 1) / 8);
 
-	if (Stream_GetRemainingLength(s) < 16ULL + bytesPerPixel * 4ULL)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 16ULL + bytesPerPixel * 4ULL))
 		return FALSE;
 
 	for (y = 7; y >= 0; y--)
@@ -2708,12 +2765,13 @@ static CACHE_BRUSH_ORDER* update_read_cache_brush_order(rdpUpdate* update, wStre
 	BOOL rc;
 	BYTE iBitmapFormat;
 	BOOL compressed = FALSE;
+	rdp_update_internal* up = update_cast(update);
 	CACHE_BRUSH_ORDER* cache_brush = calloc(1, sizeof(CACHE_BRUSH_ORDER));
 
 	if (!cache_brush)
 		goto fail;
 
-	if (Stream_GetRemainingLength(s) < 6)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 6))
 		goto fail;
 
 	Stream_Read_UINT8(s, cache_brush->index); /* cacheEntry (1 byte) */
@@ -2736,12 +2794,12 @@ static CACHE_BRUSH_ORDER* update_read_cache_brush_order(rdpUpdate* update, wStre
 		{
 			if (cache_brush->length != 8)
 			{
-				WLog_Print(update->log, WLOG_ERROR, "incompatible 1bpp brush of length:%" PRIu32 "",
+				WLog_Print(up->log, WLOG_ERROR, "incompatible 1bpp brush of length:%" PRIu32 "",
 				           cache_brush->length);
 				goto fail;
 			}
 
-			if (Stream_GetRemainingLength(s) < 8)
+			if (!Stream_CheckAndLogRequiredLength(TAG, s, 8))
 				goto fail;
 
 			/* rows are encoded in reverse order */
@@ -2771,7 +2829,7 @@ static CACHE_BRUSH_ORDER* update_read_cache_brush_order(rdpUpdate* update, wStre
 				/* uncompressed brush */
 				UINT32 scanline = (cache_brush->bpp / 8) * 8;
 
-				if (Stream_GetRemainingLength(s) / 8 < scanline)
+				if (!Stream_CheckAndLogRequiredLength(TAG, s, 8ull * scanline))
 					goto fail;
 
 				for (i = 7; i >= 0; i--)
@@ -2787,10 +2845,15 @@ fail:
 	free_cache_brush_order(update->context, cache_brush);
 	return NULL;
 }
-int update_approximate_cache_brush_order(const CACHE_BRUSH_ORDER* cache_brush, UINT16* flags)
+
+size_t update_approximate_cache_brush_order(const CACHE_BRUSH_ORDER* cache_brush, UINT16* flags)
 {
+	WINPR_UNUSED(cache_brush);
+	WINPR_UNUSED(flags);
+
 	return 64;
 }
+
 BOOL update_write_cache_brush_order(wStream* s, const CACHE_BRUSH_ORDER* cache_brush, UINT16* flags)
 {
 	int i;
@@ -2866,7 +2929,7 @@ update_read_create_offscreen_bitmap_order(wStream* s,
 	BOOL deleteListPresent;
 	OFFSCREEN_DELETE_LIST* deleteList;
 
-	if (Stream_GetRemainingLength(s) < 6)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 6))
 		return FALSE;
 
 	Stream_Read_UINT16(s, flags); /* flags (2 bytes) */
@@ -2887,7 +2950,7 @@ update_read_create_offscreen_bitmap_order(wStream* s,
 	{
 		UINT32 i;
 
-		if (Stream_GetRemainingLength(s) < 2)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 2))
 			return FALSE;
 
 		Stream_Read_UINT16(s, deleteList->cIndices);
@@ -2904,7 +2967,7 @@ update_read_create_offscreen_bitmap_order(wStream* s,
 			deleteList->indices = new_indices;
 		}
 
-		if (Stream_GetRemainingLength(s) / 2 < deleteList->cIndices)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 2ull * deleteList->cIndices))
 			return FALSE;
 
 		for (i = 0; i < deleteList->cIndices; i++)
@@ -2919,12 +2982,20 @@ update_read_create_offscreen_bitmap_order(wStream* s,
 
 	return TRUE;
 }
-int update_approximate_create_offscreen_bitmap_order(
+
+size_t update_approximate_create_offscreen_bitmap_order(
     const CREATE_OFFSCREEN_BITMAP_ORDER* create_offscreen_bitmap)
 {
-	const OFFSCREEN_DELETE_LIST* deleteList = &(create_offscreen_bitmap->deleteList);
+	const OFFSCREEN_DELETE_LIST* deleteList;
+
+	WINPR_ASSERT(create_offscreen_bitmap);
+
+	deleteList = &(create_offscreen_bitmap->deleteList);
+	WINPR_ASSERT(deleteList);
+
 	return 32 + deleteList->cIndices * 2;
 }
+
 BOOL update_write_create_offscreen_bitmap_order(
     wStream* s, const CREATE_OFFSCREEN_BITMAP_ORDER* create_offscreen_bitmap)
 {
@@ -2962,19 +3033,19 @@ BOOL update_write_create_offscreen_bitmap_order(
 }
 static BOOL update_read_switch_surface_order(wStream* s, SWITCH_SURFACE_ORDER* switch_surface)
 {
-	if (Stream_GetRemainingLength(s) < 2)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 2))
 		return FALSE;
 
 	Stream_Read_UINT16(s, switch_surface->bitmapId); /* bitmapId (2 bytes) */
 	return TRUE;
 }
-int update_approximate_switch_surface_order(const SWITCH_SURFACE_ORDER* switch_surface)
+size_t update_approximate_switch_surface_order(const SWITCH_SURFACE_ORDER* switch_surface)
 {
 	return 2;
 }
 BOOL update_write_switch_surface_order(wStream* s, const SWITCH_SURFACE_ORDER* switch_surface)
 {
-	int inf = update_approximate_switch_surface_order(switch_surface);
+	size_t inf = update_approximate_switch_surface_order(switch_surface);
 
 	if (!Stream_EnsureRemainingCapacity(s, inf))
 		return FALSE;
@@ -2988,7 +3059,7 @@ update_read_create_nine_grid_bitmap_order(wStream* s,
 {
 	NINE_GRID_BITMAP_INFO* nineGridInfo;
 
-	if (Stream_GetRemainingLength(s) < 19)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 19))
 		return FALSE;
 
 	Stream_Read_UINT8(s, create_nine_grid_bitmap->bitmapBpp); /* bitmapBpp (1 byte) */
@@ -3011,7 +3082,7 @@ update_read_create_nine_grid_bitmap_order(wStream* s,
 }
 static BOOL update_read_frame_marker_order(wStream* s, FRAME_MARKER_ORDER* frame_marker)
 {
-	if (Stream_GetRemainingLength(s) < 4)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
 		return FALSE;
 
 	Stream_Read_UINT32(s, frame_marker->action); /* action (4 bytes) */
@@ -3020,7 +3091,7 @@ static BOOL update_read_frame_marker_order(wStream* s, FRAME_MARKER_ORDER* frame
 static BOOL update_read_stream_bitmap_first_order(wStream* s,
                                                   STREAM_BITMAP_FIRST_ORDER* stream_bitmap_first)
 {
-	if (Stream_GetRemainingLength(s) < 10) // 8 + 2 at least
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 10)) // 8 + 2 at least
 		return FALSE;
 
 	Stream_Read_UINT8(s, stream_bitmap_first->bitmapFlags); /* bitmapFlags (1 byte) */
@@ -3038,14 +3109,14 @@ static BOOL update_read_stream_bitmap_first_order(wStream* s,
 
 	if (stream_bitmap_first->bitmapFlags & STREAM_BITMAP_V2)
 	{
-		if (Stream_GetRemainingLength(s) < 4)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
 			return FALSE;
 
 		Stream_Read_UINT32(s, stream_bitmap_first->bitmapSize); /* bitmapSize (4 bytes) */
 	}
 	else
 	{
-		if (Stream_GetRemainingLength(s) < 2)
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 2))
 			return FALSE;
 
 		Stream_Read_UINT16(s, stream_bitmap_first->bitmapSize); /* bitmapSize (2 bytes) */
@@ -3058,7 +3129,7 @@ static BOOL update_read_stream_bitmap_first_order(wStream* s,
 static BOOL update_read_stream_bitmap_next_order(wStream* s,
                                                  STREAM_BITMAP_NEXT_ORDER* stream_bitmap_next)
 {
-	if (Stream_GetRemainingLength(s) < 5)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 5))
 		return FALSE;
 
 	Stream_Read_UINT8(s, stream_bitmap_next->bitmapFlags); /* bitmapFlags (1 byte) */
@@ -3070,7 +3141,7 @@ static BOOL update_read_stream_bitmap_next_order(wStream* s,
 static BOOL update_read_draw_gdiplus_first_order(wStream* s,
                                                  DRAW_GDIPLUS_FIRST_ORDER* draw_gdiplus_first)
 {
-	if (Stream_GetRemainingLength(s) < 11)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 11))
 		return FALSE;
 
 	Stream_Seek_UINT8(s);                                      /* pad1Octet (1 byte) */
@@ -3082,7 +3153,7 @@ static BOOL update_read_draw_gdiplus_first_order(wStream* s,
 static BOOL update_read_draw_gdiplus_next_order(wStream* s,
                                                 DRAW_GDIPLUS_NEXT_ORDER* draw_gdiplus_next)
 {
-	if (Stream_GetRemainingLength(s) < 3)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 3))
 		return FALSE;
 
 	Stream_Seek_UINT8(s);                              /* pad1Octet (1 byte) */
@@ -3091,7 +3162,7 @@ static BOOL update_read_draw_gdiplus_next_order(wStream* s,
 }
 static BOOL update_read_draw_gdiplus_end_order(wStream* s, DRAW_GDIPLUS_END_ORDER* draw_gdiplus_end)
 {
-	if (Stream_GetRemainingLength(s) < 11)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 11))
 		return FALSE;
 
 	Stream_Seek_UINT8(s);                                    /* pad1Octet (1 byte) */
@@ -3104,7 +3175,7 @@ static BOOL
 update_read_draw_gdiplus_cache_first_order(wStream* s,
                                            DRAW_GDIPLUS_CACHE_FIRST_ORDER* draw_gdiplus_cache_first)
 {
-	if (Stream_GetRemainingLength(s) < 11)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 11))
 		return FALSE;
 
 	Stream_Read_UINT8(s, draw_gdiplus_cache_first->flags);        /* flags (1 byte) */
@@ -3118,7 +3189,7 @@ static BOOL
 update_read_draw_gdiplus_cache_next_order(wStream* s,
                                           DRAW_GDIPLUS_CACHE_NEXT_ORDER* draw_gdiplus_cache_next)
 {
-	if (Stream_GetRemainingLength(s) < 7)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 7))
 		return FALSE;
 
 	Stream_Read_UINT8(s, draw_gdiplus_cache_next->flags);       /* flags (1 byte) */
@@ -3131,7 +3202,7 @@ static BOOL
 update_read_draw_gdiplus_cache_end_order(wStream* s,
                                          DRAW_GDIPLUS_CACHE_END_ORDER* draw_gdiplus_cache_end)
 {
-	if (Stream_GetRemainingLength(s) < 11)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 11))
 		return FALSE;
 
 	Stream_Read_UINT8(s, draw_gdiplus_cache_end->flags);        /* flags (1 byte) */
@@ -3157,7 +3228,7 @@ static BOOL update_read_field_flags(wStream* s, UINT32* fieldFlags, BYTE flags, 
 			fieldBytes = 0;
 	}
 
-	if (Stream_GetRemainingLength(s) < fieldBytes)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, fieldBytes))
 		return FALSE;
 
 	*fieldFlags = 0;
@@ -3206,7 +3277,7 @@ static BOOL update_read_bounds(wStream* s, rdpBounds* bounds)
 {
 	BYTE flags;
 
-	if (Stream_GetRemainingLength(s) < 1)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 		return FALSE;
 
 	Stream_Read_UINT8(s, flags); /* field flags */
@@ -3307,11 +3378,12 @@ BOOL update_write_bounds(wStream* s, ORDER_INFO* orderInfo)
 }
 
 static BOOL read_primary_order(wLog* log, const char* orderName, wStream* s,
-                               const ORDER_INFO* orderInfo, rdpPrimaryUpdate* primary)
+                               const ORDER_INFO* orderInfo, rdpPrimaryUpdate* primary_pub)
 {
 	BOOL rc = FALSE;
+	rdp_primary_update_internal* primary = primary_update_cast(primary_pub);
 
-	if (!s || !orderInfo || !primary || !orderName)
+	if (!s || !orderInfo || !orderName)
 		return FALSE;
 
 	switch (orderInfo->orderType)
@@ -3425,30 +3497,37 @@ static BOOL update_recv_primary_order(rdpUpdate* update, wStream* s, BYTE flags)
 {
 	BYTE field;
 	BOOL rc = FALSE;
+	rdp_update_internal* up = update_cast(update);
 	rdpContext* context = update->context;
-	rdpPrimaryUpdate* primary = update->primary;
-	ORDER_INFO* orderInfo = &(primary->order_info);
-	rdpSettings* settings = context->settings;
+	rdp_primary_update_internal* primary = primary_update_cast(update->primary);
+	ORDER_INFO* orderInfo;
+	rdpSettings* settings;
 	const char* orderName;
 	BOOL defaultReturn;
+
+	WINPR_ASSERT(s);
+
+	orderInfo = &(primary->order_info);
+	WINPR_ASSERT(orderInfo);
+	WINPR_ASSERT(context);
+
+	settings = context->settings;
+	WINPR_ASSERT(settings);
 
 	defaultReturn = freerdp_settings_get_bool(settings, FreeRDP_DeactivateClientDecoding);
 
 	if (flags & ORDER_TYPE_CHANGE)
 	{
-		if (Stream_GetRemainingLength(s) < 1)
-		{
-			WLog_Print(update->log, WLOG_ERROR, "Stream_GetRemainingLength(s) < 1");
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 			return FALSE;
-		}
 
 		Stream_Read_UINT8(s, orderInfo->orderType); /* orderType (1 byte) */
 	}
 
 	orderName = primary_order_string(orderInfo->orderType);
-	WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
+	WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
 
-	if (!check_primary_order_supported(update->log, settings, orderInfo->orderType, orderName))
+	if (!check_primary_order_supported(up->log, settings, orderInfo->orderType, orderName))
 		return FALSE;
 
 	field = get_primary_drawing_order_field_bytes(orderInfo->orderType, &rc);
@@ -3457,7 +3536,7 @@ static BOOL update_recv_primary_order(rdpUpdate* update, wStream* s, BYTE flags)
 
 	if (!update_read_field_flags(s, &(orderInfo->fieldFlags), flags, field))
 	{
-		WLog_Print(update->log, WLOG_ERROR, "update_read_field_flags() failed");
+		WLog_Print(up->log, WLOG_ERROR, "update_read_field_flags() failed");
 		return FALSE;
 	}
 
@@ -3467,7 +3546,7 @@ static BOOL update_recv_primary_order(rdpUpdate* update, wStream* s, BYTE flags)
 		{
 			if (!update_read_bounds(s, &orderInfo->bounds))
 			{
-				WLog_Print(update->log, WLOG_ERROR, "update_read_bounds() failed");
+				WLog_Print(up->log, WLOG_ERROR, "update_read_bounds() failed");
 				return FALSE;
 			}
 		}
@@ -3480,10 +3559,10 @@ static BOOL update_recv_primary_order(rdpUpdate* update, wStream* s, BYTE flags)
 
 	orderInfo->deltaCoordinates = (flags & ORDER_DELTA_COORDINATES) ? TRUE : FALSE;
 
-	if (!read_primary_order(update->log, orderName, s, orderInfo, primary))
+	if (!read_primary_order(up->log, orderName, s, orderInfo, &primary->common))
 		return FALSE;
 
-	rc = IFCALLRESULT(TRUE, primary->OrderInfo, context, orderInfo, orderName);
+	rc = IFCALLRESULT(TRUE, primary->common.OrderInfo, context, orderInfo, orderName);
 	if (!rc)
 		return FALSE;
 
@@ -3491,185 +3570,197 @@ static BOOL update_recv_primary_order(rdpUpdate* update, wStream* s, BYTE flags)
 	{
 		case ORDER_TYPE_DSTBLT:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s rop=%s [0x%08" PRIx32 "]",
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s rop=%s [0x%08" PRIx32 "]",
 			           orderName, gdi_rop3_code_string(primary->dstblt.bRop),
 			           gdi_rop3_code(primary->dstblt.bRop));
-			rc = IFCALLRESULT(defaultReturn, primary->DstBlt, context, &primary->dstblt);
+			rc = IFCALLRESULT(defaultReturn, primary->common.DstBlt, context, &primary->dstblt);
 		}
 		break;
 
 		case ORDER_TYPE_PATBLT:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s rop=%s [0x%08" PRIx32 "]",
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s rop=%s [0x%08" PRIx32 "]",
 			           orderName, gdi_rop3_code_string(primary->patblt.bRop),
 			           gdi_rop3_code(primary->patblt.bRop));
-			rc = IFCALLRESULT(defaultReturn, primary->PatBlt, context, &primary->patblt);
+			rc = IFCALLRESULT(defaultReturn, primary->common.PatBlt, context, &primary->patblt);
 		}
 		break;
 
 		case ORDER_TYPE_SCRBLT:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s rop=%s [0x%08" PRIx32 "]",
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s rop=%s [0x%08" PRIx32 "]",
 			           orderName, gdi_rop3_code_string(primary->scrblt.bRop),
 			           gdi_rop3_code(primary->scrblt.bRop));
-			rc = IFCALLRESULT(defaultReturn, primary->ScrBlt, context, &primary->scrblt);
+			rc = IFCALLRESULT(defaultReturn, primary->common.ScrBlt, context, &primary->scrblt);
 		}
 		break;
 
 		case ORDER_TYPE_OPAQUE_RECT:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
-			rc = IFCALLRESULT(defaultReturn, primary->OpaqueRect, context, &primary->opaque_rect);
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
+			rc = IFCALLRESULT(defaultReturn, primary->common.OpaqueRect, context,
+			                  &primary->opaque_rect);
 		}
 		break;
 
 		case ORDER_TYPE_DRAW_NINE_GRID:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
-			rc = IFCALLRESULT(defaultReturn, primary->DrawNineGrid, context,
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
+			rc = IFCALLRESULT(defaultReturn, primary->common.DrawNineGrid, context,
 			                  &primary->draw_nine_grid);
 		}
 		break;
 
 		case ORDER_TYPE_MULTI_DSTBLT:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s rop=%s [0x%08" PRIx32 "]",
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s rop=%s [0x%08" PRIx32 "]",
 			           orderName, gdi_rop3_code_string(primary->multi_dstblt.bRop),
 			           gdi_rop3_code(primary->multi_dstblt.bRop));
-			rc = IFCALLRESULT(defaultReturn, primary->MultiDstBlt, context, &primary->multi_dstblt);
+			rc = IFCALLRESULT(defaultReturn, primary->common.MultiDstBlt, context,
+			                  &primary->multi_dstblt);
 		}
 		break;
 
 		case ORDER_TYPE_MULTI_PATBLT:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s rop=%s [0x%08" PRIx32 "]",
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s rop=%s [0x%08" PRIx32 "]",
 			           orderName, gdi_rop3_code_string(primary->multi_patblt.bRop),
 			           gdi_rop3_code(primary->multi_patblt.bRop));
-			rc = IFCALLRESULT(defaultReturn, primary->MultiPatBlt, context, &primary->multi_patblt);
+			rc = IFCALLRESULT(defaultReturn, primary->common.MultiPatBlt, context,
+			                  &primary->multi_patblt);
 		}
 		break;
 
 		case ORDER_TYPE_MULTI_SCRBLT:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s rop=%s [0x%08" PRIx32 "]",
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s rop=%s [0x%08" PRIx32 "]",
 			           orderName, gdi_rop3_code_string(primary->multi_scrblt.bRop),
 			           gdi_rop3_code(primary->multi_scrblt.bRop));
-			rc = IFCALLRESULT(defaultReturn, primary->MultiScrBlt, context, &primary->multi_scrblt);
+			rc = IFCALLRESULT(defaultReturn, primary->common.MultiScrBlt, context,
+			                  &primary->multi_scrblt);
 		}
 		break;
 
 		case ORDER_TYPE_MULTI_OPAQUE_RECT:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
-			rc = IFCALLRESULT(defaultReturn, primary->MultiOpaqueRect, context,
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
+			rc = IFCALLRESULT(defaultReturn, primary->common.MultiOpaqueRect, context,
 			                  &primary->multi_opaque_rect);
 		}
 		break;
 
 		case ORDER_TYPE_MULTI_DRAW_NINE_GRID:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
-			rc = IFCALLRESULT(defaultReturn, primary->MultiDrawNineGrid, context,
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
+			rc = IFCALLRESULT(defaultReturn, primary->common.MultiDrawNineGrid, context,
 			                  &primary->multi_draw_nine_grid);
 		}
 		break;
 
 		case ORDER_TYPE_LINE_TO:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
-			rc = IFCALLRESULT(defaultReturn, primary->LineTo, context, &primary->line_to);
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
+			rc = IFCALLRESULT(defaultReturn, primary->common.LineTo, context, &primary->line_to);
 		}
 		break;
 
 		case ORDER_TYPE_POLYLINE:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
-			rc = IFCALLRESULT(defaultReturn, primary->Polyline, context, &primary->polyline);
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
+			rc = IFCALLRESULT(defaultReturn, primary->common.Polyline, context, &primary->polyline);
 		}
 		break;
 
 		case ORDER_TYPE_MEMBLT:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s rop=%s [0x%08" PRIx32 "]",
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s rop=%s [0x%08" PRIx32 "]",
 			           orderName, gdi_rop3_code_string(primary->memblt.bRop),
 			           gdi_rop3_code(primary->memblt.bRop));
-			rc = IFCALLRESULT(defaultReturn, primary->MemBlt, context, &primary->memblt);
+			rc = IFCALLRESULT(defaultReturn, primary->common.MemBlt, context, &primary->memblt);
 		}
 		break;
 
 		case ORDER_TYPE_MEM3BLT:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s rop=%s [0x%08" PRIx32 "]",
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s rop=%s [0x%08" PRIx32 "]",
 			           orderName, gdi_rop3_code_string(primary->mem3blt.bRop),
 			           gdi_rop3_code(primary->mem3blt.bRop));
-			rc = IFCALLRESULT(defaultReturn, primary->Mem3Blt, context, &primary->mem3blt);
+			rc = IFCALLRESULT(defaultReturn, primary->common.Mem3Blt, context, &primary->mem3blt);
 		}
 		break;
 
 		case ORDER_TYPE_SAVE_BITMAP:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
-			rc = IFCALLRESULT(defaultReturn, primary->SaveBitmap, context, &primary->save_bitmap);
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
+			rc = IFCALLRESULT(defaultReturn, primary->common.SaveBitmap, context,
+			                  &primary->save_bitmap);
 		}
 		break;
 
 		case ORDER_TYPE_GLYPH_INDEX:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
-			rc = IFCALLRESULT(defaultReturn, primary->GlyphIndex, context, &primary->glyph_index);
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
+			rc = IFCALLRESULT(defaultReturn, primary->common.GlyphIndex, context,
+			                  &primary->glyph_index);
 		}
 		break;
 
 		case ORDER_TYPE_FAST_INDEX:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
-			rc = IFCALLRESULT(defaultReturn, primary->FastIndex, context, &primary->fast_index);
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
+			rc = IFCALLRESULT(defaultReturn, primary->common.FastIndex, context,
+			                  &primary->fast_index);
 		}
 		break;
 
 		case ORDER_TYPE_FAST_GLYPH:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
-			rc = IFCALLRESULT(defaultReturn, primary->FastGlyph, context, &primary->fast_glyph);
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
+			rc = IFCALLRESULT(defaultReturn, primary->common.FastGlyph, context,
+			                  &primary->fast_glyph);
 		}
 		break;
 
 		case ORDER_TYPE_POLYGON_SC:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
-			rc = IFCALLRESULT(defaultReturn, primary->PolygonSC, context, &primary->polygon_sc);
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
+			rc = IFCALLRESULT(defaultReturn, primary->common.PolygonSC, context,
+			                  &primary->polygon_sc);
 		}
 		break;
 
 		case ORDER_TYPE_POLYGON_CB:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
-			rc = IFCALLRESULT(defaultReturn, primary->PolygonCB, context, &primary->polygon_cb);
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
+			rc = IFCALLRESULT(defaultReturn, primary->common.PolygonCB, context,
+			                  &primary->polygon_cb);
 		}
 		break;
 
 		case ORDER_TYPE_ELLIPSE_SC:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
-			rc = IFCALLRESULT(defaultReturn, primary->EllipseSC, context, &primary->ellipse_sc);
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
+			rc = IFCALLRESULT(defaultReturn, primary->common.EllipseSC, context,
+			                  &primary->ellipse_sc);
 		}
 		break;
 
 		case ORDER_TYPE_ELLIPSE_CB:
 		{
-			WLog_Print(update->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
-			rc = IFCALLRESULT(defaultReturn, primary->EllipseCB, context, &primary->ellipse_cb);
+			WLog_Print(up->log, WLOG_DEBUG, "Primary Drawing Order %s", orderName);
+			rc = IFCALLRESULT(defaultReturn, primary->common.EllipseCB, context,
+			                  &primary->ellipse_cb);
 		}
 		break;
 
 		default:
-			WLog_Print(update->log, WLOG_WARN, "Primary Drawing Order %s not supported", orderName);
+			WLog_Print(up->log, WLOG_WARN, "Primary Drawing Order %s not supported", orderName);
 			break;
 	}
 
 	if (!rc)
 	{
-		WLog_Print(update->log, WLOG_WARN, "Primary Drawing Order %s failed", orderName);
+		WLog_Print(up->log, WLOG_WARN, "Primary Drawing Order %s failed", orderName);
 		return FALSE;
 	}
 
@@ -3684,11 +3775,12 @@ static BOOL update_recv_primary_order(rdpUpdate* update, wStream* s, BYTE flags)
 static BOOL update_recv_secondary_order(rdpUpdate* update, wStream* s, BYTE flags)
 {
 	BOOL rc = FALSE;
-	size_t start, end, pos, diff, rem;
+	size_t start, end, pos, diff;
 	BYTE orderType;
 	UINT16 extraFlags;
 	INT16 orderLength;
 	INT32 orderLengthFull;
+	rdp_update_internal* up = update_cast(update);
 	rdpContext* context = update->context;
 	rdpSettings* settings = context->settings;
 	rdpSecondaryUpdate* secondary = update->secondary;
@@ -3697,12 +3789,8 @@ static BOOL update_recv_secondary_order(rdpUpdate* update, wStream* s, BYTE flag
 
 	defaultReturn = freerdp_settings_get_bool(settings, FreeRDP_DeactivateClientDecoding);
 
-	rem = Stream_GetRemainingLength(s);
-	if (rem < 5)
-	{
-		WLog_Print(update->log, WLOG_ERROR, "Stream_GetRemainingLength(s) < 5");
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 5))
 		return FALSE;
-	}
 
 	Stream_Read_INT16(s, orderLength);  /* orderLength (2 bytes signed) */
 	Stream_Read_UINT16(s, extraFlags);  /* extraFlags (2 bytes) */
@@ -3710,7 +3798,7 @@ static BOOL update_recv_secondary_order(rdpUpdate* update, wStream* s, BYTE flag
 
 	start = Stream_GetPosition(s);
 	name = secondary_order_string(orderType);
-	WLog_Print(update->log, WLOG_DEBUG, "Secondary Drawing Order %s", name);
+	WLog_Print(up->log, WLOG_DEBUG, "Secondary Drawing Order %s", name);
 	rc = IFCALLRESULT(TRUE, secondary->CacheOrderInfo, context, orderLength, extraFlags, orderType,
 	                  name);
 	if (!rc)
@@ -3720,20 +3808,21 @@ static BOOL update_recv_secondary_order(rdpUpdate* update, wStream* s, BYTE flag
 	 * According to [MS-RDPEGDI] 2.2.2.2.1.2.1.1 the order length must be increased by 13 bytes
 	 * including the header. As we already read the header 7 left
 	 */
-	rem = Stream_GetRemainingLength(s);
 
 	/* orderLength might be negative without the adjusted header data.
 	 * Account for that here so all further checks operate on the correct value.
 	 */
 	orderLengthFull = orderLength + 7;
-	if ((orderLengthFull < 0) || (rem < (size_t)orderLengthFull))
+	if (orderLengthFull < 0)
 	{
-		WLog_Print(update->log, WLOG_ERROR, "Stream_GetRemainingLength(s) %" PRIuz " < %" PRId32,
-		           rem, orderLengthFull);
+		WLog_Print(up->log, WLOG_ERROR, "orderLength %" PRIu16 " must be >= 7", orderLength);
 		return FALSE;
 	}
 
-	if (!check_secondary_order_supported(update->log, settings, orderType, name))
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, (size_t)orderLengthFull))
+		return FALSE;
+
+	if (!check_secondary_order_supported(up->log, settings, orderType, name))
 		return FALSE;
 
 	switch (orderType)
@@ -3844,37 +3933,40 @@ static BOOL update_recv_secondary_order(rdpUpdate* update, wStream* s, BYTE flag
 			break;
 
 		default:
-			WLog_Print(update->log, WLOG_WARN, "SECONDARY ORDER %s not supported", name);
+			WLog_Print(up->log, WLOG_WARN, "SECONDARY ORDER %s not supported", name);
 			break;
 	}
 
 	if (!rc)
 	{
-		WLog_Print(update->log, WLOG_ERROR, "SECONDARY ORDER %s failed", name);
+		WLog_Print(up->log, WLOG_ERROR, "SECONDARY ORDER %s failed", name);
 	}
 
 	end = start + orderLengthFull;
 	pos = Stream_GetPosition(s);
 	if (pos > end)
 	{
-		WLog_Print(update->log, WLOG_WARN, "SECONDARY_ORDER %s: read %" PRIuz "bytes too much",
-		           name, pos - end);
+		WLog_Print(up->log, WLOG_WARN, "SECONDARY_ORDER %s: read %" PRIuz "bytes too much", name,
+		           pos - end);
 		return FALSE;
 	}
 	diff = end - pos;
 	if (diff > 0)
 	{
-		WLog_Print(update->log, WLOG_DEBUG,
-		           "SECONDARY_ORDER %s: read %" PRIuz "bytes short, skipping", name, diff);
+		WLog_Print(up->log, WLOG_DEBUG, "SECONDARY_ORDER %s: read %" PRIuz "bytes short, skipping",
+		           name, diff);
 		if (!Stream_SafeSeek(s, diff))
 			return FALSE;
 	}
 	return rc;
 }
 
-static BOOL read_altsec_order(wStream* s, BYTE orderType, rdpAltSecUpdate* altsec)
+static BOOL read_altsec_order(wStream* s, BYTE orderType, rdpAltSecUpdate* altsec_pub)
 {
 	BOOL rc = FALSE;
+	rdp_altsec_update_internal* altsec = altsec_update_cast(altsec_pub);
+
+	WINPR_ASSERT(s);
 
 	switch (orderType)
 	{
@@ -3944,76 +4036,84 @@ static BOOL read_altsec_order(wStream* s, BYTE orderType, rdpAltSecUpdate* altse
 
 static BOOL update_recv_altsec_order(rdpUpdate* update, wStream* s, BYTE flags)
 {
-	BYTE orderType = flags >>= 2; /* orderType is in higher 6 bits of flags field */
+	BYTE orderType = flags >> 2; /* orderType is in higher 6 bits of flags field */
 	BOOL rc = FALSE;
+	rdp_update_internal* up = update_cast(update);
 	rdpContext* context = update->context;
 	rdpSettings* settings = context->settings;
-	rdpAltSecUpdate* altsec = update->altsec;
+	rdp_altsec_update_internal* altsec = altsec_update_cast(update->altsec);
 	const char* orderName = altsec_order_string(orderType);
-	WLog_Print(update->log, WLOG_DEBUG, "Alternate Secondary Drawing Order %s", orderName);
 
-	rc = IFCALLRESULT(TRUE, altsec->DrawOrderInfo, context, orderType, orderName);
+	WINPR_ASSERT(s);
+	WINPR_ASSERT(context);
+	WINPR_ASSERT(settings);
+
+	WLog_Print(up->log, WLOG_DEBUG, "Alternate Secondary Drawing Order %s", orderName);
+
+	rc = IFCALLRESULT(TRUE, altsec->common.DrawOrderInfo, context, orderType, orderName);
 	if (!rc)
 		return FALSE;
 
-	if (!check_alt_order_supported(update->log, settings, orderType, orderName))
+	if (!check_alt_order_supported(up->log, settings, orderType, orderName))
 		return FALSE;
 
-	if (!read_altsec_order(s, orderType, altsec))
+	if (!read_altsec_order(s, orderType, &altsec->common))
 		return FALSE;
 
 	switch (orderType)
 	{
 		case ORDER_TYPE_CREATE_OFFSCREEN_BITMAP:
-			IFCALLRET(altsec->CreateOffscreenBitmap, rc, context,
+			IFCALLRET(altsec->common.CreateOffscreenBitmap, rc, context,
 			          &(altsec->create_offscreen_bitmap));
 			break;
 
 		case ORDER_TYPE_SWITCH_SURFACE:
-			IFCALLRET(altsec->SwitchSurface, rc, context, &(altsec->switch_surface));
+			IFCALLRET(altsec->common.SwitchSurface, rc, context, &(altsec->switch_surface));
 			break;
 
 		case ORDER_TYPE_CREATE_NINE_GRID_BITMAP:
-			IFCALLRET(altsec->CreateNineGridBitmap, rc, context,
+			IFCALLRET(altsec->common.CreateNineGridBitmap, rc, context,
 			          &(altsec->create_nine_grid_bitmap));
 			break;
 
 		case ORDER_TYPE_FRAME_MARKER:
-			IFCALLRET(altsec->FrameMarker, rc, context, &(altsec->frame_marker));
+			IFCALLRET(altsec->common.FrameMarker, rc, context, &(altsec->frame_marker));
 			break;
 
 		case ORDER_TYPE_STREAM_BITMAP_FIRST:
-			IFCALLRET(altsec->StreamBitmapFirst, rc, context, &(altsec->stream_bitmap_first));
+			IFCALLRET(altsec->common.StreamBitmapFirst, rc, context,
+			          &(altsec->stream_bitmap_first));
 			break;
 
 		case ORDER_TYPE_STREAM_BITMAP_NEXT:
-			IFCALLRET(altsec->StreamBitmapNext, rc, context, &(altsec->stream_bitmap_next));
+			IFCALLRET(altsec->common.StreamBitmapNext, rc, context, &(altsec->stream_bitmap_next));
 			break;
 
 		case ORDER_TYPE_GDIPLUS_FIRST:
-			IFCALLRET(altsec->DrawGdiPlusFirst, rc, context, &(altsec->draw_gdiplus_first));
+			IFCALLRET(altsec->common.DrawGdiPlusFirst, rc, context, &(altsec->draw_gdiplus_first));
 			break;
 
 		case ORDER_TYPE_GDIPLUS_NEXT:
-			IFCALLRET(altsec->DrawGdiPlusNext, rc, context, &(altsec->draw_gdiplus_next));
+			IFCALLRET(altsec->common.DrawGdiPlusNext, rc, context, &(altsec->draw_gdiplus_next));
 			break;
 
 		case ORDER_TYPE_GDIPLUS_END:
-			IFCALLRET(altsec->DrawGdiPlusEnd, rc, context, &(altsec->draw_gdiplus_end));
+			IFCALLRET(altsec->common.DrawGdiPlusEnd, rc, context, &(altsec->draw_gdiplus_end));
 			break;
 
 		case ORDER_TYPE_GDIPLUS_CACHE_FIRST:
-			IFCALLRET(altsec->DrawGdiPlusCacheFirst, rc, context,
+			IFCALLRET(altsec->common.DrawGdiPlusCacheFirst, rc, context,
 			          &(altsec->draw_gdiplus_cache_first));
 			break;
 
 		case ORDER_TYPE_GDIPLUS_CACHE_NEXT:
-			IFCALLRET(altsec->DrawGdiPlusCacheNext, rc, context,
+			IFCALLRET(altsec->common.DrawGdiPlusCacheNext, rc, context,
 			          &(altsec->draw_gdiplus_cache_next));
 			break;
 
 		case ORDER_TYPE_GDIPLUS_CACHE_END:
-			IFCALLRET(altsec->DrawGdiPlusCacheEnd, rc, context, &(altsec->draw_gdiplus_cache_end));
+			IFCALLRET(altsec->common.DrawGdiPlusCacheEnd, rc, context,
+			          &(altsec->draw_gdiplus_cache_end));
 			break;
 
 		case ORDER_TYPE_WINDOW:
@@ -4030,8 +4130,7 @@ static BOOL update_recv_altsec_order(rdpUpdate* update, wStream* s, BYTE flags)
 
 	if (!rc)
 	{
-		WLog_Print(update->log, WLOG_WARN, "Alternate Secondary Drawing Order %s failed",
-		           orderName);
+		WLog_Print(up->log, WLOG_WARN, "Alternate Secondary Drawing Order %s failed", orderName);
 	}
 
 	return rc;
@@ -4040,12 +4139,10 @@ BOOL update_recv_order(rdpUpdate* update, wStream* s)
 {
 	BOOL rc;
 	BYTE controlFlags;
+	rdp_update_internal* up = update_cast(update);
 
-	if (Stream_GetRemainingLength(s) < 1)
-	{
-		WLog_Print(update->log, WLOG_ERROR, "Stream_GetRemainingLength(s) < 1");
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
 		return FALSE;
-	}
 
 	Stream_Read_UINT8(s, controlFlags); /* controlFlags (1 byte) */
 
@@ -4057,7 +4154,7 @@ BOOL update_recv_order(rdpUpdate* update, wStream* s)
 		rc = update_recv_primary_order(update, s, controlFlags);
 
 	if (!rc)
-		WLog_Print(update->log, WLOG_ERROR, "order flags %02" PRIx8 " failed", controlFlags);
+		WLog_Print(up->log, WLOG_ERROR, "order flags %02" PRIx8 " failed", controlFlags);
 
 	return rc;
 }

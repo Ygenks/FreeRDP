@@ -17,10 +17,9 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <winpr/config.h>
 
+#include <winpr/assert.h>
 #include <winpr/sspicli.h>
 
 /**
@@ -60,6 +59,12 @@
 #include <unistd.h>
 #endif
 
+#if defined(HAVE_GETPWUID_R)
+#include <sys/types.h>
+#include <pwd.h>
+#include <unistd.h>
+#endif
+
 #include <pthread.h>
 
 #include <pwd.h>
@@ -73,15 +78,7 @@ static BOOL LogonUserCloseHandle(HANDLE handle);
 
 static BOOL LogonUserIsHandled(HANDLE handle)
 {
-	WINPR_ACCESS_TOKEN* pLogonUser = (WINPR_ACCESS_TOKEN*)handle;
-
-	if (!pLogonUser || (pLogonUser->Type != HANDLE_TYPE_ACCESS_TOKEN))
-	{
-		SetLastError(ERROR_INVALID_HANDLE);
-		return FALSE;
-	}
-
-	return TRUE;
+	return WINPR_HANDLE_IS_HANDLED(handle, HANDLE_TYPE_ACCESS_TOKEN, FALSE);
 }
 
 static int LogonUserGetFd(HANDLE handle)
@@ -128,6 +125,7 @@ static HANDLE_OPS ops = { LogonUserIsHandled,
 	                      NULL,
 	                      NULL,
 	                      NULL,
+	                      NULL,
 	                      NULL };
 
 BOOL LogonUserA(LPCSTR lpszUsername, LPCSTR lpszDomain, LPCSTR lpszPassword, DWORD dwLogonType,
@@ -145,7 +143,7 @@ BOOL LogonUserA(LPCSTR lpszUsername, LPCSTR lpszDomain, LPCSTR lpszPassword, DWO
 		return FALSE;
 
 	WINPR_HANDLE_SET_TYPE_AND_MODE(token, HANDLE_TYPE_ACCESS_TOKEN, WINPR_FD_READ);
-	token->ops = &ops;
+	token->common.ops = &ops;
 	token->Username = _strdup(lpszUsername);
 
 	if (!token->Username)
@@ -200,31 +198,33 @@ BOOL LogonUserExW(LPCWSTR lpszUsername, LPCWSTR lpszDomain, LPCWSTR lpszPassword
 
 BOOL GetUserNameExA(EXTENDED_NAME_FORMAT NameFormat, LPSTR lpNameBuffer, PULONG nSize)
 {
-	size_t length;
-	char login[MAX_PATH];
+	WINPR_ASSERT(lpNameBuffer);
+	WINPR_ASSERT(nSize);
 
 	switch (NameFormat)
 	{
 		case NameSamCompatible:
-#ifndef HAVE_GETLOGIN_R
-			strncpy(login, getlogin(), sizeof(login));
-#else
-			if (getlogin_r(login, sizeof(login)) != 0)
+#if defined(HAVE_GETPWUID_R)
+		{
+			int rc;
+			struct passwd pwd = { 0 };
+			struct passwd* result = NULL;
+			uid_t uid = getuid();
+
+			rc = getpwuid_r(uid, &pwd, lpNameBuffer, *nSize, &result);
+			if (rc != 0)
 				return FALSE;
+			if (result == NULL)
+				return FALSE;
+		}
+#elif defined(HAVE_GETLOGIN_R)
+			if (getlogin_r(lpNameBuffer, *nSize) != 0)
+				return FALSE;
+#else
+			strncpy(lpNameBuffer, getlogin(), *nSize);
 #endif
-			length = strlen(login);
-
-			if (*nSize >= length)
-			{
-				CopyMemory(lpNameBuffer, login, length + 1);
-				return TRUE;
-			}
-			else
-			{
-				*nSize = length + 1;
-			}
-
-			break;
+			*nSize = strnlen(lpNameBuffer, *nSize);
+			return TRUE;
 
 		case NameFullyQualifiedDN:
 		case NameDisplay:
@@ -245,7 +245,29 @@ BOOL GetUserNameExA(EXTENDED_NAME_FORMAT NameFormat, LPSTR lpNameBuffer, PULONG 
 
 BOOL GetUserNameExW(EXTENDED_NAME_FORMAT NameFormat, LPWSTR lpNameBuffer, PULONG nSize)
 {
-	return 0;
+	int res;
+	BOOL rc = FALSE;
+	char* name;
+
+	WINPR_ASSERT(nSize);
+	WINPR_ASSERT(lpNameBuffer);
+
+	name = calloc(1, *nSize + 1);
+	if (!name)
+		goto fail;
+
+	if (!GetUserNameExA(NameFormat, name, nSize))
+		goto fail;
+
+	res = ConvertToUnicode(CP_UTF8, 0, name, -1, &lpNameBuffer, *nSize);
+	if (res < 0)
+		goto fail;
+
+	*nSize = res + 1;
+	rc = TRUE;
+fail:
+	free(name);
+	return rc;
 }
 
 #endif

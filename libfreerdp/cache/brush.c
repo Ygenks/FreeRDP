@@ -17,9 +17,7 @@
  * limitations under the License.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+#include <freerdp/config.h>
 
 #include <stdio.h>
 #include <winpr/crt.h>
@@ -36,12 +34,11 @@
 
 #define TAG FREERDP_TAG("cache.brush")
 
-struct _BRUSH_ENTRY
+typedef struct
 {
 	UINT32 bpp;
 	void* entry;
-};
-typedef struct _BRUSH_ENTRY BRUSH_ENTRY;
+} BRUSH_ENTRY;
 
 struct rdp_brush_cache
 {
@@ -56,8 +53,6 @@ struct rdp_brush_cache
 	BRUSH_ENTRY* entries;     /* 18 */
 	BRUSH_ENTRY* monoEntries; /* 19 */
 	UINT32 paddingB[32 - 20]; /* 20 */
-
-	/* internal */
 
 	rdpContext* context;
 };
