@@ -33,6 +33,10 @@
 #include <freerdp/client/rdpei.h>
 #endif
 
+#if defined(CHANNEL_ENCOMSP_CLIENT)
+#include <freerdp/client/encomsp.h>
+#endif
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -83,19 +87,26 @@ extern "C"
 #if defined(CHANNEL_AINPUT_CLIENT)
 		ALIGN64 AInputClientContext* ainput; /**< (offset 1) */
 #else
-	    UINT64 reserved1;
+	UINT64 reserved1;
 #endif
 
 #if defined(CHANNEL_RDPEI_CLIENT)
 		ALIGN64 RdpeiClientContext* rdpei; /**< (offset 2) */
 #else
-	    UINT64 reserved2;
+	UINT64 reserved2;
 #endif
 
 		ALIGN64 INT32 lastX;        /**< (offset 3) */
 		ALIGN64 INT32 lastY;        /**< (offset 4) */
 		ALIGN64 BOOL mouse_grabbed; /** < (offset 5) */
-		UINT64 reserved[128 - 6];   /**< (offset 6) */
+
+#if defined(CHANNEL_ENCOMSP_CLIENT)
+		ALIGN64 EncomspClientContext* encomsp; /** < (offset 6) */
+		ALIGN64 BOOL controlToggle;            /**< (offset 7) */
+#else
+	    UINT64 reserved3[2];
+#endif
+		UINT64 reserved[128 - 8]; /**< (offset 8) */
 	};
 
 	/* Common client functions */
@@ -126,6 +137,9 @@ extern "C"
 
 	FREERDP_API BOOL client_cli_authenticate_ex(freerdp* instance, char** username, char** password,
 	                                            char** domain, rdp_auth_reason reason);
+
+	FREERDP_API BOOL client_cli_choose_smartcard(SmartcardCertInfo** cert_list, DWORD count,
+	                                             DWORD* choice, BOOL gateway);
 
 	FREERDP_API void
 	freerdp_client_OnChannelConnectedEventHandler(void* context,
@@ -192,6 +206,14 @@ extern "C"
 	                                                           INT32 x, INT32 y);
 
 	FREERDP_API int freerdp_client_common_stop(rdpContext* context);
+
+	FREERDP_API BOOL freerdp_client_load_channels(freerdp* instance);
+
+#if defined(CHANNEL_ENCOMSP_CLIENT)
+	FREERDP_API BOOL freerdp_client_encomsp_toggle_control(EncomspClientContext* encomsp);
+	FREERDP_API BOOL freerdp_client_encomsp_set_control(EncomspClientContext* encomsp,
+	                                                    BOOL control);
+#endif
 
 #ifdef __cplusplus
 }

@@ -907,7 +907,7 @@ static INLINE int progressive_rfx_decode_component(PROGRESSIVE_CONTEXT* progress
 		return status;
 
 	CopyMemory(sign, buffer, 4096 * 2);
-	if (!subbandDiff)
+	if (!extrapolate)
 	{
 		rfx_differential_decode(buffer + 4032, 64);
 		progressive_rfx_decode_block(prims, &buffer[0], 1024, shift->HL1);    /* HL1 */
@@ -1677,7 +1677,7 @@ static void CALLBACK progressive_process_tiles_tile_work_callback(PTP_CALLBACK_I
 			                                    param->context);
 			break;
 		default:
-			WLog_Print(param->progressive->log, WLOG_ERROR, "Invalid block type %04 (%s)" PRIx16,
+			WLog_Print(param->progressive->log, WLOG_ERROR, "Invalid block type %04" PRIx16 " (%s)",
 			           param->tile->blockType,
 			           progressive_get_block_type_string(param->tile->blockType));
 			break;
@@ -1793,7 +1793,6 @@ static INLINE int progressive_process_tiles(PROGRESSIVE_CONTEXT* progressive, wS
 		return -1;
 	}
 
-	WINPR_ASSERT(region->tiles || (region->numTiles == 0));
 	for (index = 0; index < region->numTiles; index++)
 	{
 		RFX_PROGRESSIVE_TILE* tile = region->tiles[index];

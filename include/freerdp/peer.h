@@ -54,6 +54,13 @@ typedef BOOL (*psPeerPostConnect)(freerdp_peer* peer);
 typedef BOOL (*psPeerActivate)(freerdp_peer* peer);
 typedef BOOL (*psPeerLogon)(freerdp_peer* peer, const SEC_WINNT_AUTH_IDENTITY* identity,
                             BOOL automatic);
+typedef BOOL (*psPeerSendServerRedirection)(freerdp_peer* peer, UINT32 sessionId,
+                                            const char* targetNetAddress, const char* routingToken,
+                                            const char* userName, const char* domain,
+                                            const char* password, const char* targetFQDN,
+                                            const char* targetNetBiosName, DWORD tsvUrlLength,
+                                            const BYTE* tsvUrl, UINT32 targetNetAddressesCount,
+                                            const char** targetNetAddresses);
 typedef BOOL (*psPeerAdjustMonitorsLayout)(freerdp_peer* peer);
 typedef BOOL (*psPeerClientCapabilities)(freerdp_peer* peer);
 
@@ -73,6 +80,7 @@ typedef int (*psPeerVirtualChannelWrite)(freerdp_peer* peer, HANDLE hChannel, co
 typedef void* (*psPeerVirtualChannelGetData)(freerdp_peer* peer, HANDLE hChannel);
 typedef int (*psPeerVirtualChannelSetData)(freerdp_peer* peer, HANDLE hChannel, void* data);
 typedef BOOL (*psPeerSetState)(freerdp_peer* peer, CONNECTION_STATE state);
+typedef BOOL (*psPeerReachedState)(freerdp_peer* peer, CONNECTION_STATE state);
 
 /** @brief the result of the license callback */
 typedef enum
@@ -124,6 +132,8 @@ struct rdp_freerdp_peer
 	ALIGN64 psPeerActivate Activate;
 	ALIGN64 psPeerLogon Logon;
 
+	ALIGN64 psPeerSendServerRedirection SendServerRedirection;
+
 	ALIGN64 psPeerSendChannelData SendChannelData;
 	ALIGN64 psPeerReceiveChannelData ReceiveChannelData;
 
@@ -148,7 +158,12 @@ struct rdp_freerdp_peer
 	ALIGN64 psPeerGetEventHandles GetEventHandles;
 	ALIGN64 psPeerAdjustMonitorsLayout AdjustMonitorsLayout;
 	ALIGN64 psPeerClientCapabilities ClientCapabilities;
-	ALIGN64 psPeerComputeNtlmHash ComputeNtlmHash;
+#if defined(WITH_FREERDP_DEPRECATED)
+	WINPR_DEPRECATED_VAR("Use freerdp_peer::SspiNtlmHashCallback instead",
+	                     ALIGN64 psPeerComputeNtlmHash ComputeNtlmHash;)
+#else
+	UINT64 reserved2;
+#endif
 	ALIGN64 psPeerLicenseCallback LicenseCallback;
 
 	ALIGN64 psPeerSendChannelPacket SendChannelPacket;
@@ -164,6 +179,8 @@ struct rdp_freerdp_peer
 	 * \note Must be called after \b Initialize as that also modifies the state.
 	 */
 	ALIGN64 psPeerSetState SetState;
+	ALIGN64 psPeerReachedState ReachedState;
+	ALIGN64 psSspiNtlmHashCallback SspiNtlmHashCallback;
 };
 
 #ifdef __cplusplus
@@ -174,6 +191,9 @@ extern "C"
 	FREERDP_API BOOL freerdp_peer_context_new(freerdp_peer* client);
 	FREERDP_API BOOL freerdp_peer_context_new_ex(freerdp_peer* client, const rdpSettings* settings);
 	FREERDP_API void freerdp_peer_context_free(freerdp_peer* client);
+
+	FREERDP_API const char* freerdp_peer_os_major_type_string(freerdp_peer* client);
+	FREERDP_API const char* freerdp_peer_os_minor_type_string(freerdp_peer* client);
 
 	FREERDP_API freerdp_peer* freerdp_peer_new(int sockfd);
 	FREERDP_API void freerdp_peer_free(freerdp_peer* client);

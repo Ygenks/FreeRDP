@@ -165,8 +165,12 @@ BOOL yuv_context_reset(YUV_CONTEXT* context, UINT32 width, UINT32 height)
 
 	if (context->useThreads)
 	{
-		const UINT32 count =
-		    (width + TILE_SIZE - 1) / TILE_SIZE * (height + TILE_SIZE - 1) / TILE_SIZE * 4;
+		const UINT32 pw = (width + TILE_SIZE - width % TILE_SIZE) / TILE_SIZE;
+		const UINT32 ph = (height + TILE_SIZE - height % TILE_SIZE) / TILE_SIZE;
+
+		/* We´ve calculated the amount of workers for 64x64 tiles, but the decoder
+		 * might get 16x16 tiles mixed in. */
+		const UINT32 count = pw * ph * 16;
 
 		context->work_object_count = 0;
 		if (context->encoder)
@@ -305,21 +309,21 @@ static BOOL submit_object(PTP_WORK* work_object, PTP_WORK_CALLBACK cb, const voi
 
 static void free_objects(PTP_WORK* work_objects, UINT32 waitCount)
 {
-		UINT32 i;
+	UINT32 i;
 
-	    WINPR_ASSERT(work_objects || (waitCount == 0));
+	WINPR_ASSERT(work_objects || (waitCount == 0));
 
-	    for (i = 0; i < waitCount; i++)
-		{
-		    PTP_WORK cur = work_objects[i];
-		    work_objects[i] = NULL;
+	for (i = 0; i < waitCount; i++)
+	{
+		PTP_WORK cur = work_objects[i];
+		work_objects[i] = NULL;
 
-		    if (!cur)
-			    continue;
+		if (!cur)
+			continue;
 
-		    WaitForThreadpoolWorkCallbacks(cur, FALSE);
-		    CloseThreadpoolWork(cur);
-	    }
+		WaitForThreadpoolWorkCallbacks(cur, FALSE);
+		CloseThreadpoolWork(cur);
+	}
 }
 
 static BOOL intersects(UINT32 pos, const RECTANGLE_16* regionRects, UINT32 numRegionRects)
@@ -348,7 +352,7 @@ static BOOL pool_decode(YUV_CONTEXT* context, PTP_WORK_CALLBACK cb, const BYTE* 
                         UINT32 nDstStep, const RECTANGLE_16* regionRects, UINT32 numRegionRects)
 {
 	BOOL rc = FALSE;
-	UINT32 x, y;
+	UINT32 x;
 	UINT32 waitCount = 0;
 	primitives_t* prims = primitives_get();
 
@@ -367,7 +371,7 @@ static BOOL pool_decode(YUV_CONTEXT* context, PTP_WORK_CALLBACK cb, const BYTE* 
 
 	if (!context->useThreads || (primitives_flags(prims) & PRIM_FLAGS_HAVE_EXTGPU))
 	{
-		for (y = 0; y < numRegionRects; y++)
+		for (UINT32 y = 0; y < numRegionRects; y++)
 		{
 			const RECTANGLE_16* rect = &regionRects[y];
 			YUV_PROCESS_WORK_PARAM current =
@@ -398,8 +402,10 @@ static BOOL pool_decode(YUV_CONTEXT* context, PTP_WORK_CALLBACK cb, const BYTE* 
 
 				if (context->work_object_count <= waitCount)
 				{
-					WLog_ERR(TAG, "YUV decoder: invalid number of tiles, only support %" PRIu32,
-					         context->work_object_count);
+					WLog_ERR(TAG,
+					         "YUV decoder: invalid number of tiles, only support %" PRIu32
+					         ", got %" PRIu32,
+					         context->work_object_count, waitCount);
 					goto fail;
 				}
 
@@ -543,8 +549,10 @@ static BOOL pool_decode_rect(YUV_CONTEXT* context, BYTE type, const BYTE* pYUVDa
 
 		if (context->work_object_count <= waitCount)
 		{
-			WLog_ERR(TAG, "YUV rect decoder: invalid number of tiles, only support %" PRIu32,
-			         context->work_object_count);
+			WLog_ERR(TAG,
+			         "YUV rect decoder: invalid number of tiles, only support %" PRIu32
+			         ", got %" PRIu32,
+			         context->work_object_count, waitCount);
 			goto fail;
 		}
 		current = &context->work_combined_params[waitCount];
@@ -798,8 +806,10 @@ static BOOL pool_encode(YUV_CONTEXT* context, PTP_WORK_CALLBACK cb, const BYTE* 
 
 			if (context->work_object_count <= waitCount)
 			{
-				WLog_ERR(TAG, "YUV encoder: invalid number of tiles, only support %" PRIu32,
-				         context->work_object_count);
+				WLog_ERR(TAG,
+				         "YUV encoder: invalid number of tiles, only support %" PRIu32
+				         ", got %" PRIu32,
+				         context->work_object_count, waitCount);
 				goto fail;
 			}
 

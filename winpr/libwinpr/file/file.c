@@ -1032,6 +1032,8 @@ BOOL GetDiskFreeSpaceW(LPCWSTR lpwRootPathName, LPDWORD lpSectorsPerCluster,
 	return ret;
 }
 
+#endif /* _WIN32 */
+
 /**
  * Check if a file name component is valid.
  *
@@ -1114,8 +1116,6 @@ BOOL ValidFileNameComponent(LPCWSTR lpFileName)
 	return TRUE;
 }
 
-#endif /* _WIN32 */
-
 #ifdef _UWP
 
 HANDLE CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode,
@@ -1123,9 +1123,7 @@ HANDLE CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode,
                    DWORD dwFlagsAndAttributes, HANDLE hTemplateFile)
 {
 	HANDLE hFile;
-	CREATEFILE2_EXTENDED_PARAMETERS params;
-
-	ZeroMemory(&params, sizeof(CREATEFILE2_EXTENDED_PARAMETERS));
+	CREATEFILE2_EXTENDED_PARAMETERS params = { 0 };
 
 	params.dwSize = sizeof(CREATEFILE2_EXTENDED_PARAMETERS);
 

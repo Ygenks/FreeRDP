@@ -16,12 +16,19 @@
 # limitations under the License.
 
 if (NOT FREERDP_UNIFIED_BUILD)
-	cmake_minimum_required(VERSION 3.4)
+	cmake_minimum_required(VERSION 3.9)
 	project(WinPR LANGUAGES C)
 
-	set(CMAKE_C_STANDARD 99)
+	set(CMAKE_C_STANDARD 11)
 	set(CMAKE_C_STANDARD_REQUIRED ON)
 	set(CMAKE_C_EXTENSIONS ON)
+
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT supported OUTPUT error)
+    if (supported)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+    endif()
+
 
 	set(CMAKE_COLOR_MAKEFILE ON)
 	option(WITH_LIBRARY_VERSIONING "Use library version triplet" ON)
@@ -29,6 +36,12 @@ if (NOT FREERDP_UNIFIED_BUILD)
 	# Default to build shared libs
 	option(BUILD_SHARED_LIBS "Build shared libraries" ON)
 	option(EXPORT_ALL_SYMBOLS "Export all symbols form library" OFF)
+
+	if (EXPORT_ALL_SYMBOLS)
+		#		set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+		add_definitions(-DEXPORT_ALL_SYMBOLS)
+	endif()
+
 	if(CMAKE_COMPILER_IS_GNUCC)
 		if(NOT EXPORT_ALL_SYMBOLS)
 			message(STATUS "GCC default symbol visibility: hidden")
@@ -53,6 +66,8 @@ option(WITH_SMARTCARD_INSPECT "Enable SmartCard API Inspector" OFF)
 option(WITH_DEBUG_MUTEX "Print mutex debug messages" ${DEFAULT_DEBUG_OPTION})
 option(WITH_ICU "Use ICU for unicode conversion" OFF)
 option(WITH_GSSAPI "Compile support for kerberos authentication. (EXPERIMENTAL)" OFF)
+option(WITH_INTERNAL_MD4 "Use compiled in md4 hash functions instead of OpenSSL/MBedTLS" OFF)
+option(WITH_INTERNAL_MD5 "Use compiled in md5 hash functions instead of OpenSSL/MBedTLS" OFF)
 if ( (WITH_GSSAPI) AND (NOT GSS_FOUND))
 	message(WARNING "-DWITH_GSSAPI=ON is set, but not GSSAPI implementation was found, disabling")
 elseif(WITH_GSSAPI)
@@ -68,6 +83,14 @@ elseif(WITH_GSSAPI)
 	else()
 		message(WARNING "Kerberos version not detected")
 	endif()
+endif()
+option(WITH_SPNEGO "Use SPNEGO negotiation" OFF)
+
+# This option MUST be off to avoid symbol conflicts when loading an external SSPI module library
+option(SSPI_DLL "Define and export SSPI API symbols for usage as a Windows SSPI DLL replacement" OFF)
+
+if(SSPI_DLL)
+	add_definitions("-DSSPI_DLL")
 endif()
 
 include(CMakeDependentOption)
@@ -133,11 +156,11 @@ elseif(USE_VERSION_FROM_GIT_TAG)
 endif()
 string(STRIP ${RAW_VERSION_STRING} RAW_VERSION_STRING)
 
-set(VERSION_REGEX "^.?([0-9]+)\\.([0-9]+)\\.([0-9]+)-?(.*)")
-string(REGEX REPLACE "${VERSION_REGEX}" "\\1" WINPR_VERSION_MAJOR "${RAW_VERSION_STRING}")
-string(REGEX REPLACE "${VERSION_REGEX}" "\\2" WINPR_VERSION_MINOR "${RAW_VERSION_STRING}")
-string(REGEX REPLACE "${VERSION_REGEX}" "\\3" WINPR_VERSION_REVISION "${RAW_VERSION_STRING}")
-string(REGEX REPLACE "${VERSION_REGEX}" "\\4" WINPR_VERSION_SUFFIX "${RAW_VERSION_STRING}")
+set(VERSION_REGEX "^(.*)([0-9]+)\\.([0-9]+)\\.([0-9]+)-?(.*)")
+string(REGEX REPLACE "${VERSION_REGEX}" "\\2" WINPR_VERSION_MAJOR "${RAW_VERSION_STRING}")
+string(REGEX REPLACE "${VERSION_REGEX}" "\\3" WINPR_VERSION_MINOR "${RAW_VERSION_STRING}")
+string(REGEX REPLACE "${VERSION_REGEX}" "\\4" WINPR_VERSION_REVISION "${RAW_VERSION_STRING}")
+string(REGEX REPLACE "${VERSION_REGEX}" "\\5" WINPR_VERSION_SUFFIX "${RAW_VERSION_STRING}")
 
 set(WINPR_VERSION "${WINPR_VERSION_MAJOR}.${WINPR_VERSION_MINOR}.${WINPR_VERSION_REVISION}")
 set(WINPR_API_VERSION "${WINPR_VERSION_MAJOR}")
@@ -148,13 +171,26 @@ else()
 endif()
 
 if(NOT IOS)
+	CHECK_SYMBOL_EXISTS(strndup string.h HAVE_STRNDUP)
 	check_include_files(unistd.h HAVE_UNISTD_H)
-	check_include_files(execinfo.h HAVE_EXECINFO_H)
+	check_include_files(execinfo.h HAVE_EXECINFO_HEADER)
+	if (HAVE_EXECINFO_HEADER)
+		check_symbol_exists(backtrace execinfo.h HAVE_EXECINFO_BACKTRACE)
+		check_symbol_exists(backtrace_symbols execinfo.h HAVE_EXECINFO_BACKTRACE_SYMBOLS)
+		check_symbol_exists(backtrace_symbols_fd execinfo.h HAVE_EXECINFO_BACKTRACE_SYMBOLS_FD)
+
+		# Some implementations (e.g. Android NDK API < 33) provide execinfo.h but do not define
+		# the backtrace functions. Disable detection for these cases
+		if (HAVE_EXECINFO_BACKTRACE AND HAVE_EXECINFO_BACKTRACE_SYMBOLS AND HAVE_EXECINFO_BACKTRACE_SYMBOLS_FD)
+			set(HAVE_EXECINFO_H ON)
+		endif()
+	endif()
 	check_include_files(inttypes.h HAVE_INTTYPES_H)
 	check_include_files(stdint.h HAVE_STDINT_H)
 	check_include_files(inttypes.h HAVE_INTTYPES_H)
 else(NOT IOS)
 	set(HAVE_STDINT_H 1)
+	set(HAVE_STRNDUP 1)
 	set(HAVE_INTTYPES_H 1)
 endif(NOT IOS)
 

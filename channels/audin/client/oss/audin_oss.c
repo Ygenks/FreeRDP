@@ -114,10 +114,6 @@ static BOOL audin_oss_format_supported(IAudinDevice* device, const AUDIO_FORMAT*
 
 			break;
 
-		case WAVE_FORMAT_ALAW:
-		case WAVE_FORMAT_MULAW:
-			return TRUE;
-
 		default:
 			return FALSE;
 	}
@@ -369,7 +365,7 @@ static UINT audin_oss_free(IAudinDevice* device)
 
 	if ((error = audin_oss_close(device)))
 	{
-		WLog_ERR(TAG, "audin_oss_close failed with error code %d!", error);
+		WLog_ERR(TAG, "audin_oss_close failed with error code %" PRIu32 "!", error);
 	}
 
 	free(oss);

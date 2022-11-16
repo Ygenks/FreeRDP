@@ -258,9 +258,8 @@ static int InitializeWaitableTimer(WINPR_TIMER* timer)
 	if (timer->fd <= 0)
 		return -1;
 #elif defined(TIMER_IMPL_POSIX)
-	struct sigevent sigev;
+	struct sigevent sigev = { 0 };
 	InitOnceExecuteOnce(&TimerSignalHandler_InitOnce, InstallTimerSignalHandler, NULL, NULL);
-	ZeroMemory(&sigev, sizeof(struct sigevent));
 	sigev.sigev_notify = SIGEV_SIGNAL;
 	sigev.sigev_signo = SIGALRM;
 	sigev.sigev_value.sival_ptr = (void*)timer;
@@ -656,6 +655,30 @@ BOOL CancelWaitableTimer(HANDLE hTimer)
 	}
 #endif
 	return TRUE;
+}
+
+/*
+ * Returns inner file descriptor for usage with select()
+ * This file descriptor is not usable on Windows
+ */
+
+int GetTimerFileDescriptor(HANDLE hTimer)
+{
+#ifndef _WIN32
+	WINPR_HANDLE* hdl;
+	ULONG type;
+
+	if (!winpr_Handle_GetInfo(hTimer, &type, &hdl) || type != HANDLE_TYPE_TIMER)
+	{
+		WLog_ERR(TAG, "GetTimerFileDescriptor: hTimer is not an timer");
+		SetLastError(ERROR_INVALID_PARAMETER);
+		return -1;
+	}
+
+	return winpr_Handle_getFd(hTimer);
+#else
+	return -1;
+#endif
 }
 
 /**

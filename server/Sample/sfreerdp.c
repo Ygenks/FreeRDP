@@ -298,7 +298,7 @@ static BOOL test_peer_load_icon(freerdp_peer* client)
 	testPeerContext* context;
 	FILE* fp;
 	int i;
-	char line[50];
+	char line[50] = { 0 };
 	BYTE* rgb_data = NULL;
 	int c;
 	rdpSettings* settings;
@@ -508,7 +508,7 @@ static BOOL tf_peer_dump_rfx(freerdp_peer* client)
 	UINT32 prev_useconds;
 	rdpUpdate* update;
 	rdpPcap* pcap_rfx;
-	pcap_record record;
+	pcap_record record = { 0 };
 	struct server_info* info;
 
 	WINPR_ASSERT(client);
@@ -648,7 +648,8 @@ static BOOL tf_peer_post_connect(freerdp_peer* client)
 
 	WLog_DBG(TAG, "");
 	WLog_DBG(TAG, "Client requested desktop: %" PRIu32 "x%" PRIu32 "x%" PRIu32 "",
-	         settings->DesktopWidth, settings->DesktopHeight, settings->ColorDepth);
+	         settings->DesktopWidth, settings->DesktopHeight,
+	         freerdp_settings_get_uint32(settings, FreeRDP_ColorDepth));
 #if (SAMPLE_SERVER_USE_CLIENT_RESOLUTION == 1)
 
 	if (!rfx_context_reset(context->rfx_context, settings->DesktopWidth, settings->DesktopHeight))
@@ -922,6 +923,7 @@ static int hook_peer_write_pdu(rdpTransport* transport, wStream* s)
 	CONNECTION_STATE state;
 	testPeerContext* peerCtx;
 	size_t offset = 0;
+	UINT32 flags = 0;
 	rdpContext* context = transport_get_context(transport);
 
 	WINPR_ASSERT(context);
@@ -953,18 +955,22 @@ static int hook_peer_write_pdu(rdpTransport* transport, wStream* s)
 	if (!ls)
 		goto fail;
 
-	while (stream_dump_get(context, NULL, ls, &offset, &ts) > 0)
+	while (stream_dump_get(context, &flags, ls, &offset, &ts) > 0)
 	{
 		int rc;
-		if ((last_ts > 0) && (ts > last_ts))
+		/* Skip messages from client. */
+		if (flags & STREAM_MSG_SRV_TX)
 		{
-			UINT64 diff = ts - last_ts;
-			Sleep(diff);
+			if ((last_ts > 0) && (ts > last_ts))
+			{
+				UINT64 diff = ts - last_ts;
+				Sleep(diff);
+			}
+			last_ts = ts;
+			rc = peerCtx->io.WritePdu(transport, ls);
+			if (rc < 0)
+				goto fail;
 		}
-		last_ts = ts;
-		rc = peerCtx->io.WritePdu(transport, ls);
-		if (rc < 0)
-			goto fail;
 		Stream_SetPosition(ls, 0);
 	}
 
@@ -1020,8 +1026,7 @@ static DWORD WINAPI test_peer_mainloop(LPVOID arg)
 		}
 	}
 	if (!freerdp_settings_set_string(settings, FreeRDP_CertificateFile, cert) ||
-	    !freerdp_settings_set_string(settings, FreeRDP_PrivateKeyFile, key) ||
-	    !freerdp_settings_set_string(settings, FreeRDP_RdpKeyFile, key))
+	    !freerdp_settings_set_string(settings, FreeRDP_PrivateKeyFile, key))
 	{
 		WLog_ERR(TAG, "Memory allocation failed (strdup)");
 		freerdp_peer_free(client);
@@ -1036,8 +1041,9 @@ static DWORD WINAPI test_peer_mainloop(LPVOID arg)
 	/* settings->EncryptionLevel = ENCRYPTION_LEVEL_LOW; */
 	/* settings->EncryptionLevel = ENCRYPTION_LEVEL_FIPS; */
 	settings->RemoteFxCodec = TRUE;
-	freerdp_settings_set_bool(settings, FreeRDP_NSCodec, TRUE);
-	settings->ColorDepth = 32;
+	if (!freerdp_settings_set_bool(settings, FreeRDP_NSCodec, TRUE) ||
+	    !freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32))
+		return FALSE;
 	settings->SuppressOutput = TRUE;
 	settings->RefreshRect = TRUE;
 

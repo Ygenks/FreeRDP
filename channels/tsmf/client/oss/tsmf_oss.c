@@ -58,9 +58,12 @@ typedef struct
 	UINT32 data_size_last;
 } TSMFOssAudioDevice;
 
-#define OSS_LOG_ERR(_text, _error) \
-	if (_error != 0)               \
-		WLog_ERR(TAG, "%s: %i - %s", _text, _error, strerror(_error));
+#define OSS_LOG_ERR(_text, _error)                                         \
+	do                                                                     \
+	{                                                                      \
+		if (_error != 0)                                                   \
+			WLog_ERR(TAG, "%s: %i - %s", _text, _error, strerror(_error)); \
+	} while (0)
 
 static BOOL tsmf_oss_open(ITSMFAudioDevice* audio, const char* device)
 {
@@ -229,9 +232,10 @@ static void tsmf_oss_free(ITSMFAudioDevice* audio)
 
 ITSMFAudioDevice* oss_freerdp_tsmf_client_audio_subsystem_entry(void)
 {
-	TSMFOssAudioDevice* oss;
-	oss = (TSMFOssAudioDevice*)malloc(sizeof(TSMFOssAudioDevice));
-	ZeroMemory(oss, sizeof(TSMFOssAudioDevice));
+	TSMFOssAudioDevice* oss = calloc(1, sizeof(TSMFOssAudioDevice));
+	if (!oss)
+		return NULL;
+
 	oss->iface.Open = tsmf_oss_open;
 	oss->iface.SetFormat = tsmf_oss_set_format;
 	oss->iface.Play = tsmf_oss_play;
@@ -239,5 +243,5 @@ ITSMFAudioDevice* oss_freerdp_tsmf_client_audio_subsystem_entry(void)
 	oss->iface.Flush = tsmf_oss_flush;
 	oss->iface.Free = tsmf_oss_free;
 	oss->pcm_handle = -1;
-	return (ITSMFAudioDevice*)oss;
+	return &oss->iface;
 }

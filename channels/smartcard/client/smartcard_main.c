@@ -51,17 +51,19 @@ static void smartcard_context_free(void* pCtx);
 static UINT smartcard_complete_irp(SMARTCARD_DEVICE* smartcard, IRP* irp);
 
 static SMARTCARD_DEVICE* cast_device_from(DEVICE* device, const char* fkt, const char* file,
-                                          int line)
+                                          size_t line)
 {
 	if (!device)
 	{
-		WLog_ERR(TAG, "%s [%s:%d] Called smartcard channel with NULL device", fkt, file, line);
+		WLog_ERR(TAG, "%s [%s:%" PRIuz "] Called smartcard channel with NULL device", fkt, file,
+		         line);
 		return NULL;
 	}
 
 	if (device->type != RDPDR_DTYP_SMARTCARD)
 	{
-		WLog_ERR(TAG, "%s [%s:%d] Called smartcard channel with invalid device of type %" PRIx32,
+		WLog_ERR(TAG,
+		         "%s [%s:%" PRIuz "] Called smartcard channel with invalid device of type %" PRIx32,
 		         fkt, file, line, device->type);
 		return NULL;
 	}
@@ -121,7 +123,6 @@ static DWORD WINAPI smartcard_context_thread(LPVOID arg)
 
 			if (element)
 			{
-				UINT error;
 				WINPR_ASSERT(smartcard);
 
 				if ((status = smartcard_irp_device_control_call(
@@ -138,7 +139,6 @@ static DWORD WINAPI smartcard_context_thread(LPVOID arg)
 				{
 					smartcard_operation_free(&element->operation, TRUE);
 					WLog_ERR(TAG, "Queue_Enqueue failed!");
-					status = error;
 					break;
 				}
 
@@ -469,15 +469,15 @@ static UINT smartcard_process_irp(SMARTCARD_DEVICE* smartcard, IRP* irp)
 	}
 	else
 	{
-		UINT status;
+		UINT ustatus;
 		WLog_ERR(TAG, "Unexpected SmartCard IRP: MajorFunction %s, MinorFunction: 0x%08" PRIX32 "",
 		         rdpdr_irp_string(irp->MajorFunction), irp->MinorFunction);
 		irp->IoStatus = (UINT32)STATUS_NOT_SUPPORTED;
 
-		if ((status = smartcard_complete_irp(smartcard, irp)))
+		if ((ustatus = smartcard_complete_irp(smartcard, irp)))
 		{
 			WLog_ERR(TAG, "Queue_Enqueue failed!");
-			return status;
+			return ustatus;
 		}
 	}
 

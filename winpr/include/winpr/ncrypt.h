@@ -26,6 +26,7 @@
 #else
 
 #include <winpr/wtypes.h>
+#include <winpr/winpr.h>
 
 #ifndef __SECSTATUS_DEFINED__
 typedef LONG SECURITY_STATUS;
@@ -114,6 +115,7 @@ typedef ULONG_PTR NCRYPT_KEY_HANDLE;
 	              "c\x00"           \
 	              "a\x00t\x00"      \
 	              "e\x00\x00"
+#define NCRYPT_NAME_PROPERTY (const WCHAR*)"N\x00a\x00m\x00e\x00\x00"
 #define NCRYPT_UNIQUE_NAME_PROPERTY           \
 	(const WCHAR*)"U\x00n\x00i\x00q\x00u\x00" \
 	              "e\x00 \x00N\x00"           \
@@ -199,8 +201,16 @@ extern "C"
 	 * @return ERROR_SUCCESS or an NTE error code something failed
 	 */
 	WINPR_API SECURITY_STATUS winpr_NCryptOpenStorageProviderEx(NCRYPT_PROV_HANDLE* phProvider,
-	                                                  LPCWSTR pszProviderName, DWORD dwFlags,
-	                                                  LPCSTR* modulePaths);
+	                                                            LPCWSTR pszProviderName,
+	                                                            DWORD dwFlags, LPCSTR* modulePaths);
+
+	/**
+	 * Gives a string representation of a SECURITY_STATUS
+	 *
+	 * @param status [in] SECURITY_STATUS that we want as string
+	 * @return the string representation of status
+	 */
+	WINPR_API const char* winpr_NCryptSecurityStatusError(SECURITY_STATUS status);
 
 #ifdef __cplusplus
 }

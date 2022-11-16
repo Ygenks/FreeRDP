@@ -115,7 +115,7 @@ static BOOL xf_update_last_sent(xfDispContext* xfDisp)
 
 static BOOL xf_disp_sendResize(xfDispContext* xfDisp)
 {
-	DISPLAY_CONTROL_MONITOR_LAYOUT layout;
+	DISPLAY_CONTROL_MONITOR_LAYOUT layout = { 0 };
 	xfContext* xfc;
 	rdpSettings* settings;
 
@@ -264,7 +264,24 @@ static void xf_disp_OnTimer(void* context, const TimerEventArgs* e)
 	if (!xf_disp_check_context(context, &xfc, &xfDisp, &settings))
 		return;
 
-	if (!xfDisp->activated || settings->Fullscreen)
+	if (!xfDisp->activated || xfc->fullscreen)
+		return;
+
+	xf_disp_sendResize(xfDisp);
+}
+
+static void xf_disp_OnWindowStateChange(void* context, const WindowStateChangeEventArgs* e)
+{
+	xfContext* xfc;
+	xfDispContext* xfDisp;
+	rdpSettings* settings;
+
+	WINPR_UNUSED(e);
+
+	if (!xf_disp_check_context(context, &xfc, &xfDisp, &settings))
+		return;
+
+	if (!xfDisp->activated || !xfc->fullscreen)
 		return;
 
 	xf_disp_sendResize(xfDisp);
@@ -303,6 +320,7 @@ xfDispContext* xf_disp_new(xfContext* xfc)
 	PubSub_SubscribeActivated(pubSub, xf_disp_OnActivated);
 	PubSub_SubscribeGraphicsReset(pubSub, xf_disp_OnGraphicsReset);
 	PubSub_SubscribeTimer(pubSub, xf_disp_OnTimer);
+	PubSub_SubscribeWindowStateChange(pubSub, xf_disp_OnWindowStateChange);
 	return ret;
 }
 
@@ -317,6 +335,7 @@ void xf_disp_free(xfDispContext* disp)
 		PubSub_UnsubscribeActivated(pubSub, xf_disp_OnActivated);
 		PubSub_UnsubscribeGraphicsReset(pubSub, xf_disp_OnGraphicsReset);
 		PubSub_UnsubscribeTimer(pubSub, xf_disp_OnTimer);
+		PubSub_UnsubscribeWindowStateChange(pubSub, xf_disp_OnWindowStateChange);
 	}
 
 	free(disp);

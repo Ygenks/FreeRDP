@@ -58,6 +58,7 @@ typedef RDP_CLIENT_ENTRY_POINTS_V1 RDP_CLIENT_ENTRY_POINTS;
 #include <freerdp/heartbeat.h>
 
 typedef struct stream_dump_context rdpStreamDumpContext;
+typedef struct SmartcardCertInfo_st SmartcardCertInfo;
 
 #ifdef __cplusplus
 extern "C"
@@ -79,17 +80,32 @@ extern "C"
 		CONNECTION_STATE_INITIAL,
 		CONNECTION_STATE_NEGO,
 		CONNECTION_STATE_NLA,
-		CONNECTION_STATE_MCS_CONNECT,
+		CONNECTION_STATE_MCS_CREATE_REQUEST,
+		CONNECTION_STATE_MCS_CREATE_RESPONSE,
 		CONNECTION_STATE_MCS_ERECT_DOMAIN,
 		CONNECTION_STATE_MCS_ATTACH_USER,
-		CONNECTION_STATE_MCS_CHANNEL_JOIN,
+		CONNECTION_STATE_MCS_ATTACH_USER_CONFIRM,
+		CONNECTION_STATE_MCS_CHANNEL_JOIN_REQUEST,
+		CONNECTION_STATE_MCS_CHANNEL_JOIN_RESPONSE,
 		CONNECTION_STATE_RDP_SECURITY_COMMENCEMENT,
 		CONNECTION_STATE_SECURE_SETTINGS_EXCHANGE,
-		CONNECTION_STATE_CONNECT_TIME_AUTO_DETECT,
+		CONNECTION_STATE_CONNECT_TIME_AUTO_DETECT_REQUEST,
+		CONNECTION_STATE_CONNECT_TIME_AUTO_DETECT_RESPONSE,
 		CONNECTION_STATE_LICENSING,
-		CONNECTION_STATE_MULTITRANSPORT_BOOTSTRAPPING,
-		CONNECTION_STATE_CAPABILITIES_EXCHANGE,
-		CONNECTION_STATE_FINALIZATION,
+		CONNECTION_STATE_MULTITRANSPORT_BOOTSTRAPPING_REQUEST,
+		CONNECTION_STATE_MULTITRANSPORT_BOOTSTRAPPING_RESPONSE,
+		CONNECTION_STATE_CAPABILITIES_EXCHANGE_DEMAND_ACTIVE,
+		CONNECTION_STATE_CAPABILITIES_EXCHANGE_MONITOR_LAYOUT,
+		CONNECTION_STATE_CAPABILITIES_EXCHANGE_CONFIRM_ACTIVE,
+		CONNECTION_STATE_FINALIZATION_SYNC,
+		CONNECTION_STATE_FINALIZATION_COOPERATE,
+		CONNECTION_STATE_FINALIZATION_REQUEST_CONTROL,
+		CONNECTION_STATE_FINALIZATION_PERSISTENT_KEY_LIST,
+		CONNECTION_STATE_FINALIZATION_FONT_LIST,
+		CONNECTION_STATE_FINALIZATION_CLIENT_SYNC,
+		CONNECTION_STATE_FINALIZATION_CLIENT_COOPERATE,
+		CONNECTION_STATE_FINALIZATION_CLIENT_GRANTED_CONTROL,
+		CONNECTION_STATE_FINALIZATION_CLIENT_FONT_MAP,
 		CONNECTION_STATE_ACTIVE
 	} CONNECTION_STATE;
 
@@ -111,14 +127,14 @@ extern "C"
 	typedef BOOL (*pContextNew)(freerdp* instance, rdpContext* context);
 	typedef void (*pContextFree)(freerdp* instance, rdpContext* context);
 
-	typedef BOOL (*pPreConnect)(freerdp* instance);
-	typedef BOOL (*pPostConnect)(freerdp* instance);
-	typedef BOOL (*pRedirect)(freerdp* instance);
+	typedef BOOL (*pConnectCallback)(freerdp* instance);
 	typedef void (*pPostDisconnect)(freerdp* instance);
 	typedef BOOL (*pAuthenticate)(freerdp* instance, char** username, char** password,
 	                              char** domain);
 	typedef BOOL (*pAuthenticateEx)(freerdp* instance, char** username, char** password,
 	                                char** domain, rdp_auth_reason reason);
+	typedef BOOL (*pChooseSmartcard)(SmartcardCertInfo** cert_list, DWORD count, DWORD* choice,
+	                                 BOOL gateway);
 
 	/** @brief Callback used if user interaction is required to accept
 	 *         an unknown certificate.
@@ -373,7 +389,7 @@ and settings.		 Will be initialized by a call to freerdp_context_new()		 owned b
 		                                Will be initialized by a call to freerdp_context_new()
 owned by rdpRdp */
 #else
-	    UINT64 paddingX[4];
+	UINT64 paddingX[4];
 #endif
 		ALIGN64 rdpHeartbeat* heartbeat; /* (offset 21) owned by rdpRdp*/
 
@@ -405,13 +421,13 @@ owned by rdpRdp */
 
 		ALIGN64 UINT ConnectionCallbackState; /* 47 */
 
-		ALIGN64 pPreConnect
+		ALIGN64 pConnectCallback
 		    PreConnect; /**< (offset 48)
 		             Callback for pre-connect operations.
 		             Can be set before calling freerdp_connect() to have it executed before the
 		             actual connection happens. Must be set to NULL if not needed. */
 
-		ALIGN64 pPostConnect
+		ALIGN64 pConnectCallback
 		    PostConnect; /**< (offset 49)
 		              Callback for post-connect operations.
 		              Can be set before calling freerdp_connect() to have it executed after the
@@ -428,7 +444,7 @@ owned by rdpRdp */
 		                     ALIGN64 pVerifyChangedCertificate
 		                         VerifyChangedCertificate;) /**< (offset 52) */
 #else
-	    ALIGN64 UINT64 reserved[2];
+	ALIGN64 UINT64 reserved[2];
 #endif
 		ALIGN64 pVerifyX509Certificate
 		    VerifyX509Certificate; /**< (offset 53)  Callback for X509 certificate verification
@@ -452,13 +468,18 @@ owned by rdpRdp */
 		                                  Callback for gateway consent messages.
 		                                  It is used to present consent messages to the user. */
 
-		ALIGN64 pRedirect
-		    Redirect;             /**< (offset 59)
-		                          Callback for redirect operations.
-		                          Can be set after rdp_client_disconnect_and_clear and applying redirection
-settings but before rdp_client_connect() to have it executed after the
-		                          actual connection has succeeded. Must be set to NULL if not needed. */
-		UINT64 paddingD[64 - 59]; /* 59 */
+		ALIGN64 pConnectCallback Redirect; /**< (offset 58)
+		                                               Callback for redirect operations.
+		                                               Can be set after
+		             rdp_client_disconnect_and_clear and applying redirection settings but before
+		             rdp_client_connect() to have it executed after the actual connection has
+		             succeeded. Must be set to NULL if not needed. */
+		ALIGN64 pConnectCallback
+		    LoadChannels; /**< (offset 59)
+		                   * callback for loading channel configuration. Might be called multiple
+		                   * times when redirection occurs. */
+
+		UINT64 paddingD[64 - 60]; /* 60 */
 
 		ALIGN64 pSendChannelData
 		    SendChannelData; /* (offset 64)
@@ -490,7 +511,12 @@ settings but before rdp_client_connect() to have it executed after the
 		                                 Callback for authentication.
 		                                 It is used to get the username/password. The reason
 		                                 argument tells why it was called.  */
-		UINT64 paddingE[80 - 70];               /* 70 */
+		ALIGN64 pChooseSmartcard
+		    ChooseSmartcard;      /* (offset 70)
+		                        Callback for choosing a smartcard for logon.
+		                        Used when multiple smartcards are available. Returns an index into a list
+		                        of SmartcardCertInfo pointers	*/
+		UINT64 paddingE[80 - 71]; /* 71 */
 	};
 
 	struct rdp_channel_handles
@@ -603,6 +629,9 @@ settings but before rdp_client_connect() to have it executed after the
 	FREERDP_API const char* freerdp_state_string(CONNECTION_STATE state);
 
 	FREERDP_API BOOL freerdp_channels_from_mcs(rdpSettings* settings, const rdpContext* context);
+
+	FREERDP_API BOOL freerdp_is_valid_mcs_create_request(const BYTE* data, size_t size);
+	FREERDP_API BOOL freerdp_is_valid_mcs_create_response(const BYTE* data, size_t size);
 
 #ifdef __cplusplus
 }

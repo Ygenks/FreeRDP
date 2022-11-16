@@ -67,7 +67,8 @@ void mac_set_view_size(rdpContext *context, MRDPView *view);
 
 		if (settings->WindowTitle && settings->WindowTitle[0])
 		{
-			winTitle = [[NSString alloc] initWithCString:settings->WindowTitle encoding:NSUTF8StringEncoding];
+			winTitle = [[NSString alloc] initWithCString:settings->WindowTitle
+			                                    encoding:NSUTF8StringEncoding];
 		}
 		else
 		{
@@ -75,7 +76,7 @@ void mac_set_view_size(rdpContext *context, MRDPView *view);
 			    initWithFormat:@"%@:%u",
 			                   [NSString stringWithCString:settings->ServerHostname
 			                                      encoding:NSUTF8StringEncoding],
-			                   settings->ServerPort];
+			                   settings -> ServerPort];
 		}
 
 		[window setTitle:winTitle];
@@ -147,8 +148,8 @@ void mac_set_view_size(rdpContext *context, MRDPView *view);
 
 - (void)CreateContext
 {
-	RDP_CLIENT_ENTRY_POINTS clientEntryPoints;
-	ZeroMemory(&clientEntryPoints, sizeof(RDP_CLIENT_ENTRY_POINTS));
+	RDP_CLIENT_ENTRY_POINTS clientEntryPoints = { 0 };
+
 	clientEntryPoints.Size = sizeof(RDP_CLIENT_ENTRY_POINTS);
 	clientEntryPoints.Version = RDP_CLIENT_INTERFACE_VERSION;
 	RdpClientEntry(&clientEntryPoints);

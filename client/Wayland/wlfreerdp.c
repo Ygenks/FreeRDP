@@ -134,7 +134,8 @@ static BOOL wl_end_paint(rdpContext* context)
 	w = gdi->primary->hdc->hwnd->invalid->w;
 	h = gdi->primary->hdc->hwnd->invalid->h;
 	context_w = (wlfContext*)context;
-	if(!wl_update_buffer(context_w, x, y, w, h)){
+	if (!wl_update_buffer(context_w, x, y, w, h))
+	{
 		return FALSE;
 	}
 
@@ -203,9 +204,6 @@ static BOOL wl_pre_connect(freerdp* instance)
 			WLog_WARN(TAG, "Failed to get output resolution! Check your display settings");
 		}
 	}
-
-	if (!freerdp_client_load_addins(instance->context->channels, settings))
-		return FALSE;
 
 	return TRUE;
 }
@@ -331,7 +329,7 @@ static BOOL handle_uwac_events(freerdp* instance, UwacDisplay* display)
 				if (r != UWAC_SUCCESS)
 					return FALSE;
 			}
-			    break;
+			break;
 
 			case UWAC_EVENT_POINTER_ENTER:
 				if (!wlf_handle_pointer_enter(instance, &event.mouse_enter_leave))
@@ -625,6 +623,7 @@ static BOOL wlf_client_new(freerdp* instance, rdpContext* context)
 	instance->PostConnect = wl_post_connect;
 	instance->PostDisconnect = wl_post_disconnect;
 	instance->AuthenticateEx = client_cli_authenticate_ex;
+	instance->ChooseSmartcard = client_cli_choose_smartcard;
 	instance->VerifyCertificateEx = client_cli_verify_certificate_ex;
 	instance->VerifyChangedCertificateEx = client_cli_verify_changed_certificate_ex;
 	instance->PresentGatewayMessage = client_cli_present_gateway_message;
@@ -662,6 +661,7 @@ static int wfl_client_start(rdpContext* context)
 
 static int RdpClientEntry(RDP_CLIENT_ENTRY_POINTS* pEntryPoints)
 {
+	WINPR_ASSERT(pEntryPoints);
 	ZeroMemory(pEntryPoints, sizeof(RDP_CLIENT_ENTRY_POINTS));
 	pEntryPoints->Version = RDP_CLIENT_INTERFACE_VERSION;
 	pEntryPoints->Size = sizeof(RDP_CLIENT_ENTRY_POINTS_V1);

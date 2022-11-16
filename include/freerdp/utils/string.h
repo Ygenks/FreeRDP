@@ -1,8 +1,10 @@
 /**
- * WinPR: Windows Portable Runtime
- * Clipboard Functions: POSIX file handling
+ * FreeRDP: A Remote Desktop Protocol Implementation
  *
- * Copyright 2017 Alexei Lozovsky <a.lozovsky@gmail.com>
+ * String Utils - Helper functions converting something to string
+ *
+ * Copyright 2022 Armin Novak <armin.novak@thincast.com>
+ * Copyright 2022 Thincast Technologies GmbH
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +19,21 @@
  * limitations under the License.
  */
 
-#ifndef WINPR_CLIPBOARD_POSIX_H
-#define WINPR_CLIPBOARD_POSIX_H
+#ifndef FREERDP_UTILS_STRING_H
+#define FREERDP_UTILS_STRING_H
 
-#include <winpr/clipboard.h>
+#include <freerdp/api.h>
+#include <freerdp/types.h>
 
-BOOL ClipboardInitPosixFileSubsystem(wClipboard* clipboard);
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 
-#endif /* WINPR_CLIPBOARD_POSIX_H */
+	FREERDP_API char* rdp_redirection_flags_to_string(UINT32 flags, char* buffer, size_t size);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* FREERDP_UTILS_STRING_H */

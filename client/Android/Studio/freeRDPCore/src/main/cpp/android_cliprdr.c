@@ -42,7 +42,7 @@ UINT android_cliprdr_send_client_format_list(CliprdrClientContext* cliprdr)
 	UINT32* pFormatIds;
 	const char* formatName;
 	CLIPRDR_FORMAT* formats;
-	CLIPRDR_FORMAT_LIST formatList;
+	CLIPRDR_FORMAT_LIST formatList = { 0 };
 
 	if (!cliprdr)
 		return ERROR_INVALID_PARAMETER;
@@ -52,7 +52,6 @@ UINT android_cliprdr_send_client_format_list(CliprdrClientContext* cliprdr)
 	if (!afc || !afc->cliprdr)
 		return ERROR_INVALID_PARAMETER;
 
-	ZeroMemory(&formatList, sizeof(CLIPRDR_FORMAT_LIST));
 	pFormatIds = NULL;
 	numFormats = ClipboardGetFormatIds(afc->clipboard, &pFormatIds);
 	formats = (CLIPRDR_FORMAT*)calloc(numFormats, sizeof(CLIPRDR_FORMAT));
@@ -76,10 +75,10 @@ UINT android_cliprdr_send_client_format_list(CliprdrClientContext* cliprdr)
 		}
 	}
 
-	formatList.msgFlags = CB_RESPONSE_OK;
+	formatList.common.msgFlags = CB_RESPONSE_OK;
 	formatList.numFormats = numFormats;
 	formatList.formats = formats;
-	formatList.msgType = CB_FORMAT_LIST;
+	formatList.common.msgType = CB_FORMAT_LIST;
 
 	if (!afc->cliprdr->ClientFormatList)
 		goto fail;
@@ -95,7 +94,7 @@ static UINT android_cliprdr_send_client_format_data_request(CliprdrClientContext
                                                             UINT32 formatId)
 {
 	UINT rc = ERROR_INVALID_PARAMETER;
-	CLIPRDR_FORMAT_DATA_REQUEST formatDataRequest;
+	CLIPRDR_FORMAT_DATA_REQUEST formatDataRequest = { 0 };
 	androidContext* afc;
 
 	if (!cliprdr)
@@ -106,9 +105,8 @@ static UINT android_cliprdr_send_client_format_data_request(CliprdrClientContext
 	if (!afc || !afc->clipboardRequestEvent || !cliprdr->ClientFormatDataRequest)
 		goto fail;
 
-	ZeroMemory(&formatDataRequest, sizeof(CLIPRDR_FORMAT_DATA_REQUEST));
-	formatDataRequest.msgType = CB_FORMAT_DATA_REQUEST;
-	formatDataRequest.msgFlags = 0;
+	formatDataRequest.common.msgType = CB_FORMAT_DATA_REQUEST;
+	formatDataRequest.common.msgFlags = 0;
 	formatDataRequest.requestedFormatId = formatId;
 	afc->requestedFormatId = formatId;
 	ResetEvent(afc->clipboardRequestEvent);
@@ -336,7 +334,7 @@ android_cliprdr_server_format_data_request(CliprdrClientContext* cliprdr,
 	BYTE* data;
 	UINT32 size;
 	UINT32 formatId;
-	CLIPRDR_FORMAT_DATA_RESPONSE response;
+	CLIPRDR_FORMAT_DATA_RESPONSE response = { 0 };
 	androidContext* afc;
 
 	if (!cliprdr || !formatDataRequest || !cliprdr->ClientFormatDataResponse)
@@ -347,17 +345,16 @@ android_cliprdr_server_format_data_request(CliprdrClientContext* cliprdr,
 	if (!afc)
 		return ERROR_INVALID_PARAMETER;
 
-	ZeroMemory(&response, sizeof(CLIPRDR_FORMAT_DATA_RESPONSE));
 	formatId = formatDataRequest->requestedFormatId;
 	data = (BYTE*)ClipboardGetData(afc->clipboard, formatId, &size);
-	response.msgFlags = CB_RESPONSE_OK;
-	response.dataLen = size;
+	response.common.msgFlags = CB_RESPONSE_OK;
+	response.common.dataLen = size;
 	response.requestedFormatData = data;
 
 	if (!data)
 	{
-		response.msgFlags = CB_RESPONSE_FAIL;
-		response.dataLen = 0;
+		response.common.msgFlags = CB_RESPONSE_FAIL;
+		response.common.dataLen = 0;
 		response.requestedFormatData = NULL;
 	}
 
@@ -413,7 +410,7 @@ android_cliprdr_server_format_data_response(CliprdrClientContext* cliprdr,
 	else
 		formatId = format->formatId;
 
-	size = formatDataResponse->dataLen;
+	size = formatDataResponse->common.dataLen;
 
 	if (!ClipboardSetData(afc->clipboard, formatId, formatDataResponse->requestedFormatData, size))
 		return ERROR_INTERNAL_ERROR;

@@ -75,22 +75,23 @@ static WCHAR* printer_win_get_printjob_name(size_t id)
 {
 	time_t tt;
 	struct tm tres;
-	struct tm* t;
+	errno_t err;
 	WCHAR* str;
 	size_t len = 1024;
 	int rc;
 
 	tt = time(NULL);
-	t = localtime_s(&tres, &tt);
+	err = localtime_s(&tres, &tt);
 
 	str = calloc(len, sizeof(WCHAR));
 	if (!str)
 		return NULL;
 
-	rc = swprintf_s(
-	    str, len,
-	    WIDEN("FreeRDP Print %04d-%02d-%02d% 02d-%02d-%02d - Job %") WIDEN(PRIuz) WIDEN("\0"),
-	    t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec, id);
+	rc = swprintf_s(str, len,
+	                WIDEN("FreeRDP Print %04d-%02d-%02d% 02d-%02d-%02d - Job %") WIDEN(PRIuz)
+	                    WIDEN("\0"),
+	                tres.tm_year + 1900, tres.tm_mon + 1, tres.tm_mday, tres.tm_hour, tres.tm_min,
+	                tres.tm_sec, id);
 
 	return str;
 }
@@ -315,6 +316,19 @@ static rdpPrinter** printer_win_enum_printers(rdpPrinterDriver* driver)
 	PRINTER_INFO_2* prninfo = NULL;
 	DWORD needed, returned;
 	BOOL haveDefault = FALSE;
+	LPWSTR defaultPrinter = NULL;
+
+	GetDefaultPrinter(NULL, &needed);
+	if (needed)
+	{
+		defaultPrinter = (LPWSTR)calloc(needed, sizeof(WCHAR));
+
+		if (!defaultPrinter)
+			return NULL;
+
+		if (!GetDefaultPrinter(defaultPrinter, &needed))
+			defaultPrinter[0] = '\0';
+	}
 
 	/* find required size for the buffer */
 	EnumPrinters(PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS, NULL, 2, NULL, 0, &needed,
@@ -323,7 +337,10 @@ static rdpPrinter** printer_win_enum_printers(rdpPrinterDriver* driver)
 	/* allocate array of PRINTER_INFO structures */
 	prninfo = (PRINTER_INFO_2*)GlobalAlloc(GPTR, needed);
 	if (!prninfo)
+	{
+		free(defaultPrinter);
 		return NULL;
+	}
 
 	/* call again */
 	if (!EnumPrinters(PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS, NULL, 2, (LPBYTE)prninfo,
@@ -335,6 +352,7 @@ static rdpPrinter** printer_win_enum_printers(rdpPrinterDriver* driver)
 	if (!printers)
 	{
 		GlobalFree(prninfo);
+		free(defaultPrinter);
 		return NULL;
 	}
 
@@ -344,7 +362,8 @@ static rdpPrinter** printer_win_enum_printers(rdpPrinterDriver* driver)
 	{
 		rdpPrinter* current = printers[num_printers];
 		current = printer_win_new_printer((rdpWinPrinterDriver*)driver, prninfo[i].pPrinterName,
-		                                  prninfo[i].pDriverName, 0);
+		                                  prninfo[i].pDriverName,
+		                                  _wcscmp(prninfo[i].pPrinterName, defaultPrinter) == 0);
 		if (!current)
 		{
 			printer_win_release_enum_printers(printers);
@@ -360,11 +379,12 @@ static rdpPrinter** printer_win_enum_printers(rdpPrinterDriver* driver)
 		printers[0]->is_default = TRUE;
 
 	GlobalFree(prninfo);
+	free(defaultPrinter);
 	return printers;
 }
 
 static rdpPrinter* printer_win_get_printer(rdpPrinterDriver* driver, const char* name,
-                                           const char* driverName)
+                                           const char* driverName, BOOL isDefault)
 {
 	WCHAR* driverNameW = NULL;
 	WCHAR* nameW = NULL;
@@ -384,8 +404,7 @@ static rdpPrinter* printer_win_get_printer(rdpPrinterDriver* driver, const char*
 			return NULL;
 	}
 
-	myPrinter = printer_win_new_printer(win_driver, nameW, driverNameW,
-	                                    win_driver->id_sequence == 1 ? TRUE : FALSE);
+	myPrinter = printer_win_new_printer(win_driver, nameW, driverNameW, isDefault);
 	free(driverNameW);
 	free(nameW);
 

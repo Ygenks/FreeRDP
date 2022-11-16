@@ -309,8 +309,8 @@ BOOL NamedPipeRead(PVOID Object, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
 #ifdef HAVE_SYS_AIO_H
 		{
 			int aio_status;
-			struct aiocb cb;
-			ZeroMemory(&cb, sizeof(struct aiocb));
+			struct aiocb cb = { 0 };
+
 			cb.aio_fildes = pipe->clientfd;
 			cb.aio_buf = lpBuffer;
 			cb.aio_nbytes = nNumberOfBytesToRead;
@@ -396,8 +396,8 @@ BOOL NamedPipeWrite(PVOID Object, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
 		pipe->lpOverlapped = lpOverlapped;
 #ifdef HAVE_SYS_AIO_H
 		{
-			struct aiocb cb;
-			ZeroMemory(&cb, sizeof(struct aiocb));
+			struct aiocb cb = { 0 };
+
 			cb.aio_fildes = pipe->clientfd;
 			cb.aio_buf = (void*)lpBuffer;
 			cb.aio_nbytes = nNumberOfBytesToWrite;
@@ -407,7 +407,7 @@ BOOL NamedPipeWrite(PVOID Object, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
 			cb.aio_sigevent.sigev_value.sival_ptr = (void*)lpOverlapped;
 			InstallAioSignalHandler();
 			io_status = aio_write(&cb);
-			WLog_DBG("aio_write status: %d", io_status);
+			WLog_DBG("aio_write status: %" PRIdz, io_status);
 
 			if (io_status < 0)
 				status = FALSE;
@@ -560,7 +560,6 @@ HANDLE CreateNamedPipeA(LPCSTR lpName, DWORD dwOpenMode, DWORD dwPipeMode, DWORD
 {
 	size_t index;
 	char* lpPipePath;
-	struct sockaddr_un s;
 	WINPR_NAMED_PIPE* pNamedPipe = NULL;
 	int serverfd = -1;
 	NamedPipeServerSocketEntry* baseSocket = NULL;
@@ -627,6 +626,7 @@ HANDLE CreateNamedPipeA(LPCSTR lpName, DWORD dwOpenMode, DWORD dwPipeMode, DWORD
 	/* If this is the first instance of the named pipe... */
 	if (serverfd == -1)
 	{
+		struct sockaddr_un s = { 0 };
 		/* Create the UNIX domain socket and start listening. */
 		if (!(lpPipePath = GetNamedPipeUnixDomainSocketBaseFilePathA()))
 			goto out;
@@ -653,7 +653,6 @@ HANDLE CreateNamedPipeA(LPCSTR lpName, DWORD dwOpenMode, DWORD dwPipeMode, DWORD
 			goto out;
 		}
 
-		ZeroMemory(&s, sizeof(struct sockaddr_un));
 		s.sun_family = AF_UNIX;
 		sprintf_s(s.sun_path, ARRAYSIZE(s.sun_path), "%s", pNamedPipe->lpFilePath);
 
@@ -735,7 +734,6 @@ BOOL ConnectNamedPipe(HANDLE hNamedPipe, LPOVERLAPPED lpOverlapped)
 {
 	int status;
 	socklen_t length;
-	struct sockaddr_un s;
 	WINPR_NAMED_PIPE* pNamedPipe;
 
 	if (lpOverlapped)
@@ -752,8 +750,8 @@ BOOL ConnectNamedPipe(HANDLE hNamedPipe, LPOVERLAPPED lpOverlapped)
 
 	if (!(pNamedPipe->dwFlagsAndAttributes & FILE_FLAG_OVERLAPPED))
 	{
+		struct sockaddr_un s = { 0 };
 		length = sizeof(struct sockaddr_un);
-		ZeroMemory(&s, sizeof(struct sockaddr_un));
 		status = accept(pNamedPipe->serverfd, (struct sockaddr*)&s, &length);
 
 		if (status < 0)

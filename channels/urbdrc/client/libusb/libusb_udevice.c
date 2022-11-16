@@ -71,7 +71,7 @@ typedef struct
 	UINT32 ErrorCount;
 	IUDEVICE* idev;
 	UINT32 OutputBufferSize;
-	URBDRC_CHANNEL_CALLBACK* callback;
+	GENERIC_CHANNEL_CALLBACK* callback;
 	t_isoch_transfer_cb cb;
 	wArrayList* queue;
 #if !defined(HAVE_STREAM_ID_API)
@@ -200,7 +200,7 @@ static ASYNC_TRANSFER_USER_DATA* async_transfer_user_data_new(IUDEVICE* idev, UI
                                                               size_t offset, size_t BufferSize,
                                                               const BYTE* data, size_t packetSize,
                                                               BOOL NoAck, t_isoch_transfer_cb cb,
-                                                              URBDRC_CHANNEL_CALLBACK* callback)
+                                                              GENERIC_CHANNEL_CALLBACK* callback)
 {
 	ASYNC_TRANSFER_USER_DATA* user_data;
 	UDEVICE* pdev = (UDEVICE*)idev;
@@ -246,7 +246,7 @@ static void async_transfer_user_data_free(ASYNC_TRANSFER_USER_DATA* user_data)
 	}
 }
 
-static void func_iso_callback(struct libusb_transfer* transfer)
+static void LIBUSB_CALL func_iso_callback(struct libusb_transfer* transfer)
 {
 	ASYNC_TRANSFER_USER_DATA* user_data = (ASYNC_TRANSFER_USER_DATA*)transfer->user_data;
 	const UINT32 streamID = stream_id_from_buffer(transfer);
@@ -345,7 +345,7 @@ static const LIBUSB_ENDPOINT_DESCEIPTOR* func_get_ep_desc(LIBUSB_CONFIG_DESCRIPT
 	return NULL;
 }
 
-static void func_bulk_transfer_cb(struct libusb_transfer* transfer)
+static void LIBUSB_CALL func_bulk_transfer_cb(struct libusb_transfer* transfer)
 {
 	ASYNC_TRANSFER_USER_DATA* user_data;
 	uint32_t streamID;
@@ -1199,7 +1199,7 @@ static int libusb_udev_query_device_port_status(IUDEVICE* idev, UINT32* UsbdStat
 	return success;
 }
 
-static int libusb_udev_isoch_transfer(IUDEVICE* idev, URBDRC_CHANNEL_CALLBACK* callback,
+static int libusb_udev_isoch_transfer(IUDEVICE* idev, GENERIC_CHANNEL_CALLBACK* callback,
                                       UINT32 MessageId, UINT32 RequestId, UINT32 EndpointAddress,
                                       UINT32 TransferFlags, UINT32 StartFrame, UINT32 ErrorCount,
                                       BOOL NoAck, const BYTE* packetDescriptorData,
@@ -1231,12 +1231,18 @@ static int libusb_udev_isoch_transfer(IUDEVICE* idev, URBDRC_CHANNEL_CALLBACK* c
 	if (!Buffer)
 		Stream_Seek(user_data->data, (NumberOfPackets * 12));
 
-	iso_packet_size = BufferSize / NumberOfPackets;
-	iso_transfer = libusb_alloc_transfer((int)NumberOfPackets);
+	if (NumberOfPackets > 0)
+	{
+		iso_packet_size = BufferSize / NumberOfPackets;
+		iso_transfer = libusb_alloc_transfer((int)NumberOfPackets);
+	}
 
 	if (iso_transfer == NULL)
 	{
-		WLog_Print(urbdrc->log, WLOG_ERROR, "Error: libusb_alloc_transfer.");
+		WLog_Print(urbdrc->log, WLOG_ERROR,
+		           "Error: libusb_alloc_transfer [NumberOfPackets=%" PRIu32 ", BufferSize=%" PRIu32
+		           " ]",
+		           NumberOfPackets, BufferSize);
 		async_transfer_user_data_free(user_data);
 		return -1;
 	}
@@ -1290,7 +1296,8 @@ static BOOL libusb_udev_control_transfer(IUDEVICE* idev, UINT32 RequestId, UINT3
 	return TRUE;
 }
 
-static int libusb_udev_bulk_or_interrupt_transfer(IUDEVICE* idev, URBDRC_CHANNEL_CALLBACK* callback,
+static int libusb_udev_bulk_or_interrupt_transfer(IUDEVICE* idev,
+                                                  GENERIC_CHANNEL_CALLBACK* callback,
                                                   UINT32 MessageId, UINT32 RequestId,
                                                   UINT32 EndpointAddress, UINT32 TransferFlags,
                                                   BOOL NoAck, UINT32 BufferSize, const BYTE* data,

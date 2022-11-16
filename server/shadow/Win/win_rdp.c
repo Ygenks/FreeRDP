@@ -128,9 +128,6 @@ static BOOL shw_pre_connect(freerdp* instance)
 	PubSub_SubscribeChannelConnected(context->pubSub, shw_OnChannelConnectedEventHandler);
 	PubSub_SubscribeChannelDisconnected(context->pubSub, shw_OnChannelDisconnectedEventHandler);
 
-	if (!freerdp_client_load_addins(context->channels, context->settings))
-		return FALSE;
-
 	return TRUE;
 }
 
@@ -283,6 +280,7 @@ static BOOL shw_freerdp_client_new(freerdp* instance, rdpContext* context)
 	if (!(shw->StopEvent = CreateEvent(NULL, TRUE, FALSE, NULL)))
 		return FALSE;
 
+	instance->LoadChannels = freerdp_client_load_channels;
 	instance->PreConnect = shw_pre_connect;
 	instance->PostConnect = shw_post_connect;
 	instance->Authenticate = shw_authenticate;
@@ -308,7 +306,8 @@ static BOOL shw_freerdp_client_new(freerdp* instance, rdpContext* context)
 	settings->FrameMarkerCommandEnabled = TRUE;
 	settings->SurfaceFrameMarkerEnabled = TRUE;
 	settings->AltSecFrameMarkerSupport = TRUE;
-	settings->ColorDepth = 32;
+	if (!freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32))
+		return FALSE;
 	settings->NSCodec = TRUE;
 	settings->RemoteFxCodec = TRUE;
 	settings->FastPathInput = TRUE;
@@ -316,7 +315,8 @@ static BOOL shw_freerdp_client_new(freerdp* instance, rdpContext* context)
 	settings->LargePointerFlag = TRUE;
 	settings->CompressionEnabled = FALSE;
 	settings->AutoReconnectionEnabled = FALSE;
-	settings->NetworkAutoDetect = FALSE;
+	if (!freerdp_settings_set_bool(settings, FreeRDP_NetworkAutoDetect, FALSE))
+		return FALSE;
 	settings->SupportHeartbeatPdu = FALSE;
 	settings->SupportMultitransport = FALSE;
 	settings->ConnectionType = CONNECTION_TYPE_LAN;
@@ -355,8 +355,8 @@ int shw_RdpClientEntry(RDP_CLIENT_ENTRY_POINTS* pEntryPoints)
 int win_shadow_rdp_init(winShadowSubsystem* subsystem)
 {
 	rdpContext* context;
-	RDP_CLIENT_ENTRY_POINTS clientEntryPoints;
-	ZeroMemory(&clientEntryPoints, sizeof(RDP_CLIENT_ENTRY_POINTS));
+	RDP_CLIENT_ENTRY_POINTS clientEntryPoints = { 0 };
+
 	clientEntryPoints.Size = sizeof(RDP_CLIENT_ENTRY_POINTS);
 	clientEntryPoints.Version = RDP_CLIENT_INTERFACE_VERSION;
 	shw_RdpClientEntry(&clientEntryPoints);

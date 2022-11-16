@@ -8,7 +8,6 @@ set(${MODULE_PREFIX}_TESTS
 	TestIni.c
 	TestVersion.c
 	TestImage.c
-	TestBipBuffer.c
 	TestBacktrace.c
 	TestQueue.c
 	TestPrint.c
@@ -19,6 +18,7 @@ set(${MODULE_PREFIX}_TESTS
 	TestLinkedList.c
 	TestListDictionary.c
 	TestCmdLine.c
+	TestASN1.c
 	TestWLog.c
 	TestWLogCallback.c
 	TestHashTable.c

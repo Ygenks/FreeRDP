@@ -23,8 +23,7 @@ set(COLLECTIONS_SRCS
 	collections/Queue.c
 	collections/Stack.c
 	collections/PubSub.c
-	collections/BipBuffer.c
-	collections/BitStream.c
+        collections/BitStream.c
 	collections/Reference.c
 	collections/ArrayList.c
 	collections/LinkedList.c
@@ -87,6 +86,9 @@ set(WLOG_SRCS
 	${JOURNALD_SRCS}
 	)
 
+set(ASN1_SRCS
+	asn1/asn1.c
+)
 
 set(SRCS
 	ini.c
@@ -141,7 +143,9 @@ endif()
 winpr_module_add(${SRCS}
 	${COLLECTIONS_SRCS}
 	${LODEPNG_SRCS}
-	${WLOG_SRCS})
+	${WLOG_SRCS}
+	${ASN1_SRCS}
+)
 
 winpr_include_directory_add(
 	"lodepng"

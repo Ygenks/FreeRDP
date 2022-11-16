@@ -440,7 +440,7 @@ BOOL proxy_parse_uri(rdpSettings* settings, const char* uri_in)
 			port = 1080;
 		}
 
-		WLog_DBG(TAG, "setting default proxy port: %d", port);
+		WLog_DBG(TAG, "setting default proxy port: %" PRIu16, port);
 	}
 
 	if (!freerdp_settings_set_uint16(settings, FreeRDP_ProxyPort, port))
@@ -460,14 +460,14 @@ BOOL proxy_parse_uri(rdpSettings* settings, const char* uri_in)
 
 	if (freerdp_settings_get_string(settings, FreeRDP_ProxyUsername))
 	{
-		WLog_INFO(TAG, "Parsed proxy configuration: %s://%s:%s@%s:%d", protocol,
+		WLog_INFO(TAG, "Parsed proxy configuration: %s://%s:%s@%s:%" PRIu16, protocol,
 		          freerdp_settings_get_string(settings, FreeRDP_ProxyUsername), "******",
 		          freerdp_settings_get_string(settings, FreeRDP_ProxyHostname),
 		          freerdp_settings_get_uint16(settings, FreeRDP_ProxyPort));
 	}
 	else
 	{
-		WLog_INFO(TAG, "Parsed proxy configuration: %s://%s:%d", protocol,
+		WLog_INFO(TAG, "Parsed proxy configuration: %s://%s:%" PRIu16, protocol,
 		          freerdp_settings_get_string(settings, FreeRDP_ProxyHostname),
 		          freerdp_settings_get_uint16(settings, FreeRDP_ProxyPort));
 	}
@@ -524,8 +524,8 @@ static BOOL http_proxy_connect(BIO* bufferedBio, const char* proxyUsername,
 	size_t reserveSize;
 	size_t portLen;
 	size_t hostLen;
-	const char connect[8] = "CONNECT";
-	const char httpheader[17] = " HTTP/1.1" CRLF "Host: ";
+	const char connect[] = "CONNECT ";
+	const char httpheader[] = " HTTP/1.1" CRLF "Host: ";
 
 	WINPR_ASSERT(bufferedBio);
 	WINPR_ASSERT(hostname);
@@ -534,16 +534,16 @@ static BOOL http_proxy_connect(BIO* bufferedBio, const char* proxyUsername,
 
 	hostLen = strlen(hostname);
 	portLen = strnlen(port_str, sizeof(port_str));
-	reserveSize = ARRAYSIZE(connect) + (hostLen + 1 + portLen) * 2 + ARRAYSIZE(httpheader);
+	reserveSize = strlen(connect) + (hostLen + 1 + portLen) * 2 + strlen(httpheader);
 	s = Stream_New(NULL, reserveSize);
 	if (!s)
 		goto fail;
 
-	Stream_Write(s, connect, ARRAYSIZE(connect));
+	Stream_Write(s, connect, strlen(connect));
 	Stream_Write(s, hostname, hostLen);
 	Stream_Write_UINT8(s, ':');
 	Stream_Write(s, port_str, portLen);
-	Stream_Write(s, httpheader, ARRAYSIZE(httpheader));
+	Stream_Write(s, httpheader, strlen(httpheader));
 	Stream_Write(s, hostname, hostLen);
 	Stream_Write_UINT8(s, ':');
 	Stream_Write(s, port_str, portLen);
@@ -566,14 +566,13 @@ static BOOL http_proxy_connect(BIO* bufferedBio, const char* proxyUsername,
 				sprintf_s(creds, size, "%s:%s", proxyUsername, proxyPassword);
 				base64 = crypto_base64_encode((const BYTE*)creds, size - 1);
 
-				if (!base64 ||
-				    !Stream_EnsureRemainingCapacity(s, ARRAYSIZE(basic) + strlen(base64)))
+				if (!base64 || !Stream_EnsureRemainingCapacity(s, strlen(basic) + strlen(base64)))
 				{
 					free(base64);
 					free(creds);
 					goto fail;
 				}
-				Stream_Write(s, basic, ARRAYSIZE(basic));
+				Stream_Write(s, basic, strlen(basic));
 				Stream_Write(s, base64, strlen(base64));
 
 				free(base64);
@@ -586,6 +585,7 @@ static BOOL http_proxy_connect(BIO* bufferedBio, const char* proxyUsername,
 		goto fail;
 
 	Stream_Write(s, CRLF CRLF, 4);
+	ERR_clear_error();
 	status = BIO_write(bufferedBio, Stream_Buffer(s), Stream_GetPosition(s));
 
 	if ((status < 0) || ((size_t)status != Stream_GetPosition(s)))
@@ -604,6 +604,7 @@ static BOOL http_proxy_connect(BIO* bufferedBio, const char* proxyUsername,
 			goto fail;
 		}
 
+		ERR_clear_error();
 		status =
 		    BIO_read(bufferedBio, (BYTE*)recv_buf + resultsize, sizeof(recv_buf) - resultsize - 1);
 
@@ -661,6 +662,7 @@ static int recv_socks_reply(BIO* bufferedBio, BYTE* buf, int len, char* reason, 
 
 	for (;;)
 	{
+		ERR_clear_error();
 		status = BIO_read(bufferedBio, buf, len);
 
 		if (status > 0)
@@ -725,6 +727,7 @@ static BOOL socks_proxy_connect(BIO* bufferedBio, const char* proxyUsername,
 	if (nauthMethods > 1)
 		buf[3] = AUTH_M_USR_PASS;
 
+	ERR_clear_error();
 	status = BIO_write(bufferedBio, buf, writeLen);
 
 	if (status != writeLen)
@@ -768,6 +771,7 @@ static BOOL socks_proxy_connect(BIO* bufferedBio, const char* proxyUsername,
 				*ptr = userpassLen;
 				ptr++;
 				memcpy(ptr, proxyPassword, userpassLen);
+				ERR_clear_error();
 				status = BIO_write(bufferedBio, buf, 3 + usernameLen + userpassLen);
 
 				if (status != 3 + usernameLen + userpassLen)
@@ -805,6 +809,7 @@ static BOOL socks_proxy_connect(BIO* bufferedBio, const char* proxyUsername,
 	/* follows DST.PORT in netw. format */
 	buf[hostnlen + 5] = (port >> 8) & 0xff;
 	buf[hostnlen + 6] = port & 0xff;
+	ERR_clear_error();
 	status = BIO_write(bufferedBio, buf, hostnlen + 7U);
 
 	if ((status < 0) || ((size_t)status != (hostnlen + 7U)))
@@ -820,14 +825,14 @@ static BOOL socks_proxy_connect(BIO* bufferedBio, const char* proxyUsername,
 
 	if (buf[1] == 0)
 	{
-		WLog_INFO(TAG, "Successfully connected to %s:%d", hostname, port);
+		WLog_INFO(TAG, "Successfully connected to %s:%" PRIu16, hostname, port);
 		return TRUE;
 	}
 
 	if (buf[1] > 0 && buf[1] < 9)
 		WLog_INFO(TAG, "SOCKS Proxy replied: %s", rplstat[buf[1]]);
 	else
-		WLog_INFO(TAG, "SOCKS Proxy replied: %d status not listed in rfc1928", buf[1]);
+		WLog_INFO(TAG, "SOCKS Proxy replied: %" PRIu8 " status not listed in rfc1928", buf[1]);
 
 	return FALSE;
 }

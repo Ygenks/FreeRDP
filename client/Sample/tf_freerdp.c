@@ -158,11 +158,6 @@ static BOOL tf_pre_connect(freerdp* instance)
 	PubSub_SubscribeChannelDisconnected(instance->context->pubSub,
 	                                    tf_OnChannelDisconnectedEventHandler);
 
-	/* Load all required plugins / channels / libraries specified by current
-	 * settings. */
-	if (!freerdp_client_load_addins(instance->context->channels, settings))
-		return FALSE;
-
 	/* TODO: Any code your client requires */
 	return TRUE;
 }
@@ -400,7 +395,7 @@ int main(int argc, char* argv[])
 		goto fail;
 	}
 
-	if (!stream_dump_register_handlers(context, CONNECTION_STATE_MCS_CONNECT))
+	if (!stream_dump_register_handlers(context, CONNECTION_STATE_MCS_CREATE_REQUEST, FALSE))
 		goto fail;
 
 	if (freerdp_client_start(context) != 0)

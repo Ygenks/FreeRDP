@@ -64,7 +64,8 @@ static char* winpr_read_unix_timezone_identifier_from_file(FILE* fp)
 	do
 	{
 		rc = fread(tzid + read, 1, length - read - 1, fp);
-		read += rc;
+		if (rc > 0)
+			read += rc;
 
 		if (read < (length - 1))
 			break;
@@ -87,8 +88,11 @@ static char* winpr_read_unix_timezone_identifier_from_file(FILE* fp)
 	}
 
 	tzid[read] = '\0';
-	if (tzid[read - 1] == '\n')
-		tzid[read - 1] = '\0';
+	if (read > 0)
+	{
+		if (tzid[read - 1] == '\n')
+			tzid[read - 1] = '\0';
+	}
 
 	return tzid;
 }
@@ -380,8 +384,8 @@ winpr_get_current_time_zone_rule(const TIME_ZONE_RULE_ENTRY* rules, UINT32 count
 	{
 		if ((rules[i].TicksStart >= windows_time) && (windows_time >= rules[i].TicksEnd))
 		{
-			/*WLog_ERR(TAG,  "Got rule %d from table at %p with count %"PRIu32"", i, (void*) rules,
-			 * count);*/
+			/*WLog_ERR(TAG,  "Got rule %" PRIu32 " from table at %p with count %"PRIu32"", i,
+			 * (void*) rules, count);*/
 			return &rules[i];
 		}
 	}

@@ -42,14 +42,14 @@ set(${MODULE_PREFIX}_GATEWAY_SRCS
 	${${MODULE_PREFIX}_GATEWAY_DIR}/rts.h
 	${${MODULE_PREFIX}_GATEWAY_DIR}/rts_signature.c
 	${${MODULE_PREFIX}_GATEWAY_DIR}/rts_signature.h
-	${${MODULE_PREFIX}_GATEWAY_DIR}/ntlm.c
-	${${MODULE_PREFIX}_GATEWAY_DIR}/ntlm.h
 	${${MODULE_PREFIX}_GATEWAY_DIR}/http.c
 	${${MODULE_PREFIX}_GATEWAY_DIR}/http.h
 	${${MODULE_PREFIX}_GATEWAY_DIR}/ncacn_http.c
 	${${MODULE_PREFIX}_GATEWAY_DIR}/ncacn_http.h)
 
 set(${MODULE_PREFIX}_SRCS
+    state.h
+    state.c
 	utils.c
 	utils.h
 	streamdump.c
@@ -62,8 +62,6 @@ set(${MODULE_PREFIX}_SRCS
 	nla.c
 	nla.h
 	smartcardlogon.c
-	tscredentials.c
-	tscredentials.h
 	nego.c
 	nego.h
 	info.c
@@ -135,7 +133,9 @@ set(${MODULE_PREFIX}_SRCS
 	peer.c
 	peer.h
 	display.c
-	display.h)
+	display.h
+	credssp_auth.c
+	credssp_auth.h)
 
 set(${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS} ${${MODULE_PREFIX}_GATEWAY_SRCS})
 

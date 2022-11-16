@@ -52,6 +52,7 @@
 #include "rdp.h"
 #include "proxy.h"
 #include "utils.h"
+#include "state.h"
 
 #define TAG FREERDP_TAG("core.transport")
 
@@ -163,24 +164,34 @@ static BOOL transport_default_attach(rdpTransport* transport, int sockfd)
 	const rdpSettings* settings;
 	rdpContext* context = transport_get_context(transport);
 
+	if (sockfd < 0)
+	{
+		WLog_WARN(TAG, "Running peer without socket (sockfd=%d)", sockfd);
+		return TRUE;
+	}
+
 	settings = context->settings;
 	WINPR_ASSERT(settings);
 
-	if (!freerdp_tcp_set_keep_alive_mode(settings, sockfd))
-		goto fail;
+	if (sockfd >= 0)
+	{
+		if (!freerdp_tcp_set_keep_alive_mode(settings, sockfd))
+			goto fail;
 
-	socketBio = BIO_new(BIO_s_simple_socket());
+		socketBio = BIO_new(BIO_s_simple_socket());
 
-	if (!socketBio)
-		goto fail;
+		if (!socketBio)
+			goto fail;
 
-	BIO_set_fd(socketBio, sockfd, BIO_CLOSE);
+		BIO_set_fd(socketBio, sockfd, BIO_CLOSE);
+	}
+
 	bufferedBio = BIO_new(BIO_s_buffered_socket());
-
 	if (!bufferedBio)
 		goto fail;
 
-	bufferedBio = BIO_push(bufferedBio, socketBio);
+	if (socketBio)
+		bufferedBio = BIO_push(bufferedBio, socketBio);
 	WINPR_ASSERT(bufferedBio);
 	transport->frontBio = bufferedBio;
 	return TRUE;
@@ -189,7 +200,7 @@ fail:
 	if (socketBio)
 		BIO_free_all(socketBio);
 	else
-		close(sockfd);
+		closesocket(sockfd);
 
 	return FALSE;
 }
@@ -329,8 +340,8 @@ BOOL transport_connect_nla(rdpTransport* transport)
 
 	if (settings->AuthenticationServiceClass)
 	{
-		if (!nla_set_service_principal(rdp->nla, nla_make_spn(settings->AuthenticationServiceClass,
-		                                                      settings->ServerHostname)))
+		if (!nla_set_service_principal(rdp->nla, settings->AuthenticationServiceClass,
+		                               freerdp_settings_get_server_name(settings)))
 			return FALSE;
 	}
 
@@ -530,7 +541,6 @@ static void transport_bio_error_log(rdpTransport* transport, LPCSTR biofunc, BIO
                                     LPCSTR func, DWORD line)
 {
 	unsigned long sslerr;
-	char* buf;
 	int saveerrno;
 	DWORD level;
 
@@ -550,20 +560,14 @@ static void transport_bio_error_log(rdpTransport* transport, LPCSTR biofunc, BIO
 		return;
 	}
 
-	buf = malloc(120);
-
-	if (buf)
+	while ((sslerr = ERR_get_error()))
 	{
+		char buf[120] = { 0 };
 		const char* fmt = "%s returned an error: %s";
 
-		while ((sslerr = ERR_get_error()))
-		{
-			ERR_error_string_n(sslerr, buf, 120);
-			WLog_PrintMessage(transport->log, WLOG_MESSAGE_TEXT, level, line, file, func, fmt,
-			                  biofunc, buf);
-		}
-
-		free(buf);
+		ERR_error_string_n(sslerr, buf, 120);
+		WLog_PrintMessage(transport->log, WLOG_MESSAGE_TEXT, level, line, file, func, fmt, biofunc,
+		                  buf);
 	}
 }
 
@@ -592,6 +596,7 @@ static SSIZE_T transport_read_layer(rdpTransport* transport, BYTE* data, size_t 
 	{
 		const SSIZE_T tr = (SSIZE_T)bytes - read;
 		int r = (int)((tr > INT_MAX) ? INT_MAX : tr);
+		ERR_clear_error();
 		int status = BIO_read(transport->frontBio, data + read, r);
 
 		if (freerdp_shall_disconnect_context(context))
@@ -887,6 +892,8 @@ static int transport_default_write(rdpTransport* transport, wStream* s)
 	if (!s)
 		return -1;
 
+	Stream_AddRef(s);
+
 	rdp = context->rdp;
 	if (!rdp)
 		goto fail;
@@ -907,6 +914,7 @@ static int transport_default_write(rdpTransport* transport, wStream* s)
 
 	while (length > 0)
 	{
+		ERR_clear_error();
 		status = BIO_write(transport->frontBio, Stream_Pointer(s), length);
 
 		if (status <= 0)
@@ -1100,7 +1108,7 @@ int transport_drain_output_buffer(rdpTransport* transport)
 int transport_check_fds(rdpTransport* transport)
 {
 	int status;
-	int recv_status;
+	state_run_t recv_status;
 	wStream* received;
 	UINT64 now = GetTickCount64();
 	UINT64 dueDate = 0;
@@ -1166,15 +1174,17 @@ int transport_check_fds(rdpTransport* transport)
 		Stream_Release(received);
 
 		/* session redirection or activation */
-		if (recv_status == 1 || recv_status == 2)
+		if (recv_status == STATE_RUN_REDIRECT || recv_status == STATE_RUN_ACTIVE)
 		{
 			return recv_status;
 		}
 
-		if (recv_status < 0)
+		if (state_run_failed(recv_status))
 		{
+			char buffer[64] = { 0 };
 			WLog_Print(transport->log, WLOG_ERROR,
-			           "transport_check_fds: transport->ReceiveCallback() - %i", recv_status);
+			           "transport_check_fds: transport->ReceiveCallback() - %s",
+			           state_run_result_string(recv_status, buffer, ARRAYSIZE(buffer)));
 			return -1;
 		}
 
@@ -1196,9 +1206,11 @@ BOOL transport_set_blocking_mode(rdpTransport* transport, BOOL blocking)
 
 	transport->blocking = blocking;
 
-	WINPR_ASSERT(transport->frontBio);
-	if (!BIO_set_nonblock(transport->frontBio, blocking ? FALSE : TRUE))
-		return FALSE;
+	if (transport->frontBio)
+	{
+		if (!BIO_set_nonblock(transport->frontBio, blocking ? FALSE : TRUE))
+			return FALSE;
+	}
 
 	return TRUE;
 }

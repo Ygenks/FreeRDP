@@ -30,6 +30,7 @@
 
 #include "../core/settings.h"
 #include "../core/certificate.h"
+#include "../core/capabilities.h"
 #include <freerdp/settings.h>
 #include <freerdp/freerdp.h>
 #include <freerdp/log.h>
@@ -334,6 +335,11 @@ RDPDR_DEVICE* freerdp_device_new(UINT32 Type, size_t count, const char* args[])
 					if (!device.printer->DriverName)
 						goto fail;
 				}
+
+				if (count > 2)
+				{
+					device.printer->IsDefault = _stricmp(args[2], "default") == 0;
+				}
 				break;
 			case RDPDR_DTYP_SERIAL:
 				if (count > 1)
@@ -473,7 +479,7 @@ RDPDR_DEVICE* freerdp_device_clone(const RDPDR_DEVICE* device)
 				args[1] = src.drive->Path;
 				count = 2;
 			}
-		break;
+			break;
 
 		case RDPDR_DTYP_PRINT:
 			if (src.printer->DriverName)
@@ -481,7 +487,7 @@ RDPDR_DEVICE* freerdp_device_clone(const RDPDR_DEVICE* device)
 				args[1] = src.printer->DriverName;
 				count = 2;
 			}
-		break;
+			break;
 
 		case RDPDR_DTYP_SMARTCARD:
 			break;
@@ -504,7 +510,7 @@ RDPDR_DEVICE* freerdp_device_clone(const RDPDR_DEVICE* device)
 				args[3] = src.serial->Permissive;
 				count = 4;
 			}
-		break;
+			break;
 
 		case RDPDR_DTYP_PARALLEL:
 			if (src.parallel->Path)
@@ -512,7 +518,7 @@ RDPDR_DEVICE* freerdp_device_clone(const RDPDR_DEVICE* device)
 				args[1] = src.parallel->Path;
 				count = 2;
 			}
-		break;
+			break;
 		default:
 			WLog_ERR(TAG, "unknown device type %" PRIu32 "", device->Type);
 			break;
@@ -816,15 +822,75 @@ void freerdp_dynamic_channel_collection_free(rdpSettings* settings)
 	freerdp_settings_set_uint32(settings, FreeRDP_DynamicChannelCount, 0);
 }
 
+void freerdp_capability_buffer_free(rdpSettings* settings)
+{
+	UINT32 x;
+
+	WINPR_ASSERT(settings);
+
+	if (settings->ReceivedCapabilityData)
+	{
+		for (x = 0; x < settings->ReceivedCapabilitiesSize; x++)
+		{
+			free(settings->ReceivedCapabilityData[x]);
+			settings->ReceivedCapabilityData[x] = NULL;
+		}
+	}
+	settings->ReceivedCapabilitiesSize = 0;
+
+	free(settings->ReceivedCapabilityDataSizes);
+	settings->ReceivedCapabilityDataSizes = NULL;
+
+	free(settings->ReceivedCapabilityData);
+	settings->ReceivedCapabilityData = NULL;
+	free(settings->ReceivedCapabilities);
+	settings->ReceivedCapabilities = NULL;
+}
+
+BOOL freerdp_capability_buffer_copy(rdpSettings* settings, const rdpSettings* src)
+{
+	WINPR_ASSERT(settings);
+	WINPR_ASSERT(src);
+
+	if (!freerdp_capability_buffer_allocate(settings, src->ReceivedCapabilitiesSize))
+		return FALSE;
+
+	for (UINT32 x = 0; x < src->ReceivedCapabilitiesSize; x++)
+	{
+		void* tmp;
+
+		WINPR_ASSERT(settings->ReceivedCapabilities);
+		settings->ReceivedCapabilities[x] = src->ReceivedCapabilities[x];
+
+		WINPR_ASSERT(settings->ReceivedCapabilityDataSizes);
+		settings->ReceivedCapabilityDataSizes[x] = src->ReceivedCapabilityDataSizes[x];
+
+		WINPR_ASSERT(settings->ReceivedCapabilityData);
+		if (src->ReceivedCapabilityDataSizes[x] > 0)
+		{
+			tmp = realloc(settings->ReceivedCapabilityData[x],
+			              settings->ReceivedCapabilityDataSizes[x]);
+			if (!tmp)
+				return FALSE;
+			memcpy(tmp, src->ReceivedCapabilityData[x], src->ReceivedCapabilityDataSizes[x]);
+			settings->ReceivedCapabilityData[x] = tmp;
+		}
+		else
+		{
+			free(settings->ReceivedCapabilityData[x]);
+			settings->ReceivedCapabilityData[x] = NULL;
+		}
+	}
+	return TRUE;
+}
+
 void freerdp_target_net_addresses_free(rdpSettings* settings)
 {
-	UINT32 index;
-
 	WINPR_ASSERT(settings);
 
 	if (settings->TargetNetAddresses)
 	{
-		for (index = 0; index < settings->TargetNetAddressCount; index++)
+		for (UINT32 index = 0; index < settings->TargetNetAddressCount; index++)
 			free(settings->TargetNetAddresses[index]);
 	}
 
@@ -833,6 +899,43 @@ void freerdp_target_net_addresses_free(rdpSettings* settings)
 	settings->TargetNetAddressCount = 0;
 	settings->TargetNetAddresses = NULL;
 	settings->TargetNetPorts = NULL;
+}
+
+void freerdp_server_license_issuers_free(rdpSettings* settings)
+{
+	UINT32 x;
+	WINPR_ASSERT(settings);
+
+	if (settings->ServerLicenseProductIssuers)
+	{
+		for (x = 0; x < settings->ServerLicenseProductIssuersCount; x++)
+			free(settings->ServerLicenseProductIssuers[x]);
+	}
+	free(settings->ServerLicenseProductIssuers);
+	settings->ServerLicenseProductIssuers = NULL;
+	settings->ServerLicenseProductIssuersCount = 0;
+}
+
+BOOL freerdp_server_license_issuers_copy(rdpSettings* settings, char** issuers, UINT32 count)
+{
+	UINT32 x;
+
+	WINPR_ASSERT(settings);
+	WINPR_ASSERT(issuers || (count == 0));
+
+	if (!freerdp_settings_set_pointer_len(settings, FreeRDP_ServerLicenseProductIssuers, NULL,
+	                                      count))
+		return FALSE;
+
+	for (x = 0; x < count; x++)
+	{
+		char* issuer = _strdup(issuers[x]);
+		if (!issuer)
+			return FALSE;
+		settings->ServerLicenseProductIssuers[x] = issuer;
+	}
+
+	return TRUE;
 }
 
 void freerdp_performance_flags_make(rdpSettings* settings)
@@ -1243,6 +1346,12 @@ BOOL freerdp_settings_set_pointer_len(rdpSettings* settings, size_t id, const vo
 			return freerdp_settings_set_pointer_len_(settings, FreeRDP_TargetNetAddresses,
 			                                         FreeRDP_TargetNetAddressCount, data, len,
 			                                         sizeof(char*));
+		case FreeRDP_ServerLicenseProductIssuers:
+			if (data == NULL)
+				freerdp_server_license_issuers_free(settings);
+			return freerdp_settings_set_pointer_len_(settings, FreeRDP_ServerLicenseProductIssuers,
+			                                         FreeRDP_ServerLicenseProductIssuersCount, data,
+			                                         len, sizeof(char*));
 		case FreeRDP_TargetNetPorts:
 			if (data == NULL)
 				freerdp_target_net_addresses_free(settings);
@@ -1260,11 +1369,9 @@ BOOL freerdp_settings_set_pointer_len(rdpSettings* settings, size_t id, const vo
 				          "FreeRDP_ChannelDefArray::len expected to be >= %" PRIu32
 				          ", but have %" PRIu32,
 				          CHANNEL_MAX_COUNT, len);
-			if (!freerdp_settings_set_pointer_len_(settings, FreeRDP_ChannelDefArray,
-			                                       FreeRDP_ChannelDefArraySize, data, len,
-			                                       sizeof(CHANNEL_DEF)))
-				return FALSE;
-			return freerdp_settings_set_uint32(settings, FreeRDP_ChannelCount, len);
+			return freerdp_settings_set_pointer_len_(settings, FreeRDP_ChannelDefArray,
+			                                         FreeRDP_ChannelDefArraySize, data, len,
+			                                         sizeof(CHANNEL_DEF));
 		case FreeRDP_MonitorDefArray:
 			return freerdp_settings_set_pointer_len_(settings, id, FreeRDP_MonitorDefArraySize,
 			                                         data, len, sizeof(rdpMonitor));
@@ -1311,7 +1418,16 @@ BOOL freerdp_settings_set_pointer_len(rdpSettings* settings, size_t id, const vo
 				freerdp_dynamic_channel_collection_free(settings);
 			return freerdp_settings_set_pointer_len_(settings, id, FreeRDP_DynamicChannelArraySize,
 			                                         data, len, sizeof(ADDIN_ARGV*));
+		case FreeRDP_ReceivedCapabilityData:
+			if (data == NULL)
+				freerdp_capability_buffer_free(settings);
+			return freerdp_settings_set_pointer_len_(settings, id, FreeRDP_ReceivedCapabilitiesSize,
+			                                         data, len, sizeof(BYTE*));
 		case FreeRDP_ReceivedCapabilities:
+			if (data == NULL)
+				freerdp_capability_buffer_free(settings);
+			return freerdp_settings_set_pointer_len_(settings, id, FreeRDP_ReceivedCapabilitiesSize,
+			                                         data, len, sizeof(char));
 		case FreeRDP_OrderSupport:
 			return freerdp_settings_set_pointer_len_(settings, id, -1, data, len, sizeof(char));
 
@@ -1405,7 +1521,7 @@ void* freerdp_settings_get_pointer_array_writable(const rdpSettings* settings, s
 			max = freerdp_settings_get_uint32(settings, FreeRDP_DeviceArraySize);
 			if (offset >= max)
 				goto fail;
-			return &settings->DeviceArray[offset];
+			return settings->DeviceArray[offset];
 		case FreeRDP_StaticChannelArray:
 			max = freerdp_settings_get_uint32(settings, FreeRDP_StaticChannelArraySize);
 			if (offset >= max)
@@ -1655,6 +1771,16 @@ UINT32 freerdp_settings_get_codecs_flags(const rdpSettings* settings)
 	return flags;
 }
 
+const char* freerdp_settings_get_server_name(const rdpSettings* settings)
+{
+	const char* hostname = settings->ServerHostname;
+
+	if (settings->UserSpecifiedServerName)
+		hostname = settings->UserSpecifiedServerName;
+
+	return hostname;
+}
+
 #if defined(WITH_FREERDP_DEPRECATED)
 ADDIN_ARGV* freerdp_static_channel_clone(ADDIN_ARGV* channel)
 {
@@ -1784,4 +1910,89 @@ BOOL freerdp_device_equal(const RDPDR_DEVICE* what, const RDPDR_DEVICE* expect)
 	}
 
 	return TRUE;
+}
+
+char* freerdp_rail_support_flags_to_string(UINT32 flags, char* buffer, size_t length)
+{
+	if (flags & RAIL_LEVEL_SUPPORTED)
+		winpr_str_append("RAIL_LEVEL_SUPPORTED", buffer, length, "|");
+	if (flags & RAIL_LEVEL_DOCKED_LANGBAR_SUPPORTED)
+		winpr_str_append("RAIL_LEVEL_DOCKED_LANGBAR_SUPPORTED", buffer, length, "|");
+	if (flags & RAIL_LEVEL_SHELL_INTEGRATION_SUPPORTED)
+		winpr_str_append("RAIL_LEVEL_SHELL_INTEGRATION_SUPPORTED", buffer, length, "|");
+	if (flags & RAIL_LEVEL_LANGUAGE_IME_SYNC_SUPPORTED)
+		winpr_str_append("RAIL_LEVEL_LANGUAGE_IME_SYNC_SUPPORTED", buffer, length, "|");
+	if (flags & RAIL_LEVEL_SERVER_TO_CLIENT_IME_SYNC_SUPPORTED)
+		winpr_str_append("RAIL_LEVEL_SERVER_TO_CLIENT_IME_SYNC_SUPPORTED", buffer, length, "|");
+	if (flags & RAIL_LEVEL_HIDE_MINIMIZED_APPS_SUPPORTED)
+		winpr_str_append("RAIL_LEVEL_HIDE_MINIMIZED_APPS_SUPPORTED", buffer, length, "|");
+	if (flags & RAIL_LEVEL_WINDOW_CLOAKING_SUPPORTED)
+		winpr_str_append("RAIL_LEVEL_WINDOW_CLOAKING_SUPPORTED", buffer, length, "|");
+	if (flags & RAIL_LEVEL_HANDSHAKE_EX_SUPPORTED)
+		winpr_str_append("RAIL_LEVEL_HANDSHAKE_EX_SUPPORTED", buffer, length, "|");
+	if (flags & RAIL_LEVEL_LANGUAGE_IME_SYNC_SUPPORTED)
+		winpr_str_append("RAIL_LEVEL_LANGUAGE_IME_SYNC_SUPPORTED", buffer, length, "|");
+	return buffer;
+}
+
+BOOL freerdp_settings_update_from_caps(rdpSettings* settings, BYTE* capsFlags, BYTE** capsData,
+                                       UINT32* capsSizes, UINT32 capsCount, BOOL serverReceivedCaps)
+{
+	UINT32 x;
+	WINPR_ASSERT(settings);
+	WINPR_ASSERT(capsFlags || (capsCount == 0));
+	WINPR_ASSERT(capsData || (capsCount == 0));
+	WINPR_ASSERT(capsSizes || (capsCount == 0));
+	WINPR_ASSERT(capsCount <= UINT16_MAX);
+
+	for (x = 0; x < capsCount; x++)
+	{
+		if (capsFlags[x])
+		{
+			wStream buffer;
+			wStream* sub = Stream_StaticConstInit(&buffer, capsData[x], capsSizes[x]);
+
+			if (!rdp_read_capability_set(sub, (UINT16)x, settings, serverReceivedCaps))
+				return FALSE;
+		}
+	}
+
+	return TRUE;
+}
+
+const char* freerdp_rdp_version_string(UINT32 version)
+{
+	switch (version)
+	{
+		case RDP_VERSION_4:
+			return "RDP_VERSION_4";
+		case RDP_VERSION_5_PLUS:
+			return "RDP_VERSION_5_PLUS";
+		case RDP_VERSION_10_0:
+			return "RDP_VERSION_10_0";
+		case RDP_VERSION_10_1:
+			return "RDP_VERSION_10_1";
+		case RDP_VERSION_10_2:
+			return "RDP_VERSION_10_2";
+		case RDP_VERSION_10_3:
+			return "RDP_VERSION_10_3";
+		case RDP_VERSION_10_4:
+			return "RDP_VERSION_10_4";
+		case RDP_VERSION_10_5:
+			return "RDP_VERSION_10_5";
+		case RDP_VERSION_10_6:
+			return "RDP_VERSION_10_6";
+		case RDP_VERSION_10_7:
+			return "RDP_VERSION_10_7";
+		case RDP_VERSION_10_8:
+			return "RDP_VERSION_10_8";
+		case RDP_VERSION_10_9:
+			return "RDP_VERSION_10_9";
+		case RDP_VERSION_10_10:
+			return "RDP_VERSION_10_11";
+		case RDP_VERSION_10_11:
+			return "RDP_VERSION_10_11";
+		default:
+			return "RDP_VERSION_UNKNOWN";
+	}
 }

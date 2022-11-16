@@ -89,11 +89,29 @@
 #define PDU_TYPE_FLOW_RESPONSE 0x42
 #define PDU_TYPE_FLOW_STOP 0x43
 
-#define FINALIZE_SC_SYNCHRONIZE_PDU 0x01
-#define FINALIZE_SC_CONTROL_COOPERATE_PDU 0x02
-#define FINALIZE_SC_CONTROL_GRANTED_PDU 0x04
-#define FINALIZE_SC_FONT_MAP_PDU 0x08
-#define FINALIZE_SC_COMPLETE 0x0F
+typedef enum
+{
+	FINALIZE_SC_SYNCHRONIZE_PDU = 0x01,
+	FINALIZE_SC_CONTROL_COOPERATE_PDU = 0x02,
+	FINALIZE_SC_CONTROL_GRANTED_PDU = 0x04,
+	FINALIZE_SC_FONT_MAP_PDU = 0x08,
+
+	FINALIZE_CS_SYNCHRONIZE_PDU = 0x10,
+	FINALIZE_CS_CONTROL_COOPERATE_PDU = 0x20,
+	FINALIZE_CS_CONTROL_REQUEST_PDU = 0x40,
+	FINALIZE_CS_PERSISTENT_KEY_LIST_PDU = 0x80,
+	FINALIZE_CS_FONT_LIST_PDU = 0x100,
+
+	FINALIZE_DEACTIVATE_REACTIVATE = 0x200
+} rdpFinalizePduType;
+
+#define FINALIZE_SC_COMPLETE                                           \
+	(FINALIZE_SC_SYNCHRONIZE_PDU | FINALIZE_SC_CONTROL_COOPERATE_PDU | \
+	 FINALIZE_SC_CONTROL_GRANTED_PDU | FINALIZE_SC_FONT_MAP_PDU)
+#define FINALIZE_CS_COMPLETE                                                 \
+	(FINALIZE_CS_SYNCHRONIZE_PDU | FINALIZE_CS_CONTROL_COOPERATE_PDU |       \
+	 FINALIZE_CS_CONTROL_REQUEST_PDU | FINALIZE_CS_PERSISTENT_KEY_LIST_PDU | \
+	 FINALIZE_CS_FONT_LIST_PDU)
 
 /* Data PDU Types */
 typedef enum
@@ -145,6 +163,7 @@ struct rdp_rdp
 	rdpLicense* license;
 	rdpRedirection* redirection;
 	rdpSettings* settings;
+	rdpSettings* originalSettings;
 	rdpTransport* transport;
 	rdpAutoDetect* autodetect;
 	rdpHeartbeat* heartbeat;
@@ -173,8 +192,7 @@ struct rdp_rdp
 	UINT32 errorInfo;
 	UINT32 finalize_sc_pdus;
 	BOOL resendFocus;
-	BOOL deactivation_reactivation;
-	BOOL AwaitCapabilities;
+
 	UINT64 inBytes;
 	UINT64 inPackets;
 	UINT64 outBytes;
@@ -183,6 +201,12 @@ struct rdp_rdp
 	rdpTransportIo* io;
 	void* ioContext;
 	HANDLE abortEvent;
+
+	wPubSub* pubSub;
+
+	BOOL was_deactivated;
+	UINT32 deactivated_width;
+	UINT32 deactivated_height;
 };
 
 FREERDP_LOCAL BOOL rdp_read_security_header(wStream* s, UINT16* flags, UINT16* length);
@@ -200,13 +224,13 @@ FREERDP_LOCAL wStream* rdp_send_stream_init(rdpRdp* rdp);
 FREERDP_LOCAL wStream* rdp_send_stream_pdu_init(rdpRdp* rdp);
 
 FREERDP_LOCAL BOOL rdp_read_header(rdpRdp* rdp, wStream* s, UINT16* length, UINT16* channel_id);
-FREERDP_LOCAL void rdp_write_header(rdpRdp* rdp, wStream* s, UINT16 length, UINT16 channel_id);
+FREERDP_LOCAL BOOL rdp_write_header(rdpRdp* rdp, wStream* s, UINT16 length, UINT16 channel_id);
 
 FREERDP_LOCAL BOOL rdp_send_pdu(rdpRdp* rdp, wStream* s, UINT16 type, UINT16 channel_id);
 
 FREERDP_LOCAL wStream* rdp_data_pdu_init(rdpRdp* rdp);
 FREERDP_LOCAL BOOL rdp_send_data_pdu(rdpRdp* rdp, wStream* s, BYTE type, UINT16 channel_id);
-FREERDP_LOCAL int rdp_recv_data_pdu(rdpRdp* rdp, wStream* s);
+FREERDP_LOCAL state_run_t rdp_recv_data_pdu(rdpRdp* rdp, wStream* s);
 
 FREERDP_LOCAL BOOL rdp_send(rdpRdp* rdp, wStream* s, UINT16 channelId);
 
@@ -217,11 +241,12 @@ FREERDP_LOCAL BOOL rdp_channel_send_packet(rdpRdp* rdp, UINT16 channelId, size_t
 
 FREERDP_LOCAL wStream* rdp_message_channel_pdu_init(rdpRdp* rdp);
 FREERDP_LOCAL BOOL rdp_send_message_channel_pdu(rdpRdp* rdp, wStream* s, UINT16 sec_flags);
-FREERDP_LOCAL int rdp_recv_message_channel_pdu(rdpRdp* rdp, wStream* s, UINT16 securityFlags);
+FREERDP_LOCAL state_run_t rdp_recv_message_channel_pdu(rdpRdp* rdp, wStream* s,
+                                                       UINT16 securityFlags);
 
-FREERDP_LOCAL int rdp_recv_out_of_sequence_pdu(rdpRdp* rdp, wStream* s);
+FREERDP_LOCAL state_run_t rdp_recv_out_of_sequence_pdu(rdpRdp* rdp, wStream* s);
 
-FREERDP_LOCAL int rdp_recv_callback(rdpTransport* transport, wStream* s, void* extra);
+FREERDP_LOCAL state_run_t rdp_recv_callback(rdpTransport* transport, wStream* s, void* extra);
 
 FREERDP_LOCAL int rdp_check_fds(rdpRdp* rdp);
 
@@ -247,6 +272,11 @@ FREERDP_LOCAL void* rdp_get_io_callback_context(rdpRdp* rdp);
 
 const char* data_pdu_type_to_string(UINT8 type);
 const char* pdu_type_to_str(UINT16 pduType);
+
+BOOL rdp_finalize_reset_flags(rdpRdp* rdp, BOOL clearAll);
+BOOL rdp_finalize_set_flag(rdpRdp* rdp, UINT32 flag);
+BOOL rdp_finalize_is_flag_set(rdpRdp* rdp, UINT32 flag);
+const char* rdp_finalize_flags_to_str(UINT32 flags, char* buffer, size_t size);
 
 BOOL rdp_decrypt(rdpRdp* rdp, wStream* s, UINT16* pLength, UINT16 securityFlags);
 

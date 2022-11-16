@@ -480,7 +480,8 @@ static void xf_input_touch_end(xfContext* xfc, const XIDeviceEvent* event)
 
 static int xf_input_handle_event_local(xfContext* xfc, const XEvent* event)
 {
-	union {
+	union
+	{
 		const XGenericEventCookie* cc;
 		XGenericEventCookie* vc;
 	} cookie;
@@ -548,11 +549,10 @@ static void xf_input_hide_cursor(xfContext* xfc)
 
 	if (!xfc->cursorHidden)
 	{
-		XcursorImage ci;
+		XcursorImage ci = { 0 };
 		XcursorPixel xp = 0;
 		static Cursor nullcursor = None;
 		xf_lock_x11(xfc);
-		ZeroMemory(&ci, sizeof(ci));
 		ci.version = XCURSOR_IMAGE_VERSION;
 		ci.size = sizeof(ci);
 		ci.width = ci.height = 1;
@@ -640,6 +640,13 @@ int xf_input_event(xfContext* xfc, const XEvent* xevent, XIDeviceEvent* event, i
 	settings = xfc->common.context.settings;
 	WINPR_ASSERT(settings);
 
+	xfWindow* window = xfc->window;
+	if (window)
+	{
+		if (xf_floatbar_is_locked(window->floatbar))
+			return 0;
+	}
+
 	xf_input_show_cursor(xfc);
 
 	switch (evtype)
@@ -691,7 +698,8 @@ int xf_input_event(xfContext* xfc, const XEvent* xevent, XIDeviceEvent* event, i
 			}
 			break;
 		default:
-			WLog_WARN(TAG, "[%s] Unhandled event %d: Event was registered but is not handled!");
+			WLog_WARN(TAG, "[%s] Unhandled event %d: Event was registered but is not handled!",
+			          __FUNCTION__, evtype);
 			break;
 	}
 
@@ -700,7 +708,8 @@ int xf_input_event(xfContext* xfc, const XEvent* xevent, XIDeviceEvent* event, i
 
 static int xf_input_handle_event_remote(xfContext* xfc, const XEvent* event)
 {
-	union {
+	union
+	{
 		const XGenericEventCookie* cc;
 		XGenericEventCookie* vc;
 	} cookie;

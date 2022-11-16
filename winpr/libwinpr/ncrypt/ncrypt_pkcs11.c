@@ -23,6 +23,8 @@
 #include <winpr/library.h>
 #include <winpr/assert.h>
 #include <winpr/spec.h>
+#include <winpr/smartcard.h>
+#include <winpr/asn1.h>
 
 #include "../log.h"
 #include "ncrypt.h"
@@ -30,7 +32,7 @@
 #define TAG WINPR_TAG("ncryptp11")
 
 #define MAX_SLOTS 64
-#define MAX_PRIVATE_KEYS 64
+#define MAX_KEYS 64
 #define MAX_KEYS_PER_SLOT 64
 
 /** @brief ncrypt provider handle */
@@ -61,25 +63,43 @@ typedef struct
 	CK_CHAR keyLabel[256];
 	CK_ULONG idLen;
 	CK_BYTE id[64];
-} NCryptPrivateKeyEnum;
+} NCryptKeyEnum;
 
 /** @brief */
 typedef struct
 {
 	CK_ULONG nslots;
 	CK_SLOT_ID slots[MAX_SLOTS];
-	CK_ULONG nprivateKeys;
-	NCryptPrivateKeyEnum privateKeys[MAX_PRIVATE_KEYS];
-	CK_ULONG privateKeyIndex;
+	CK_ULONG nKeys;
+	NCryptKeyEnum keys[MAX_KEYS];
+	CK_ULONG keyIndex;
 } P11EnumKeysState;
 
-static CK_OBJECT_CLASS object_class_private_key = CKO_PRIVATE_KEY;
-static CK_BBOOL object_sign = CK_TRUE;
+struct
+{
+	const char* label;
+	BYTE tag[3];
+} piv_cert_tags[] = {
+	{ "Certificate for PIV Authentication", "\x5F\xC1\x05" },
+	{ "Certificate for Digital Signature", "\x5F\xC1\x0A" },
+	{ "Certificate for Key Management", "\x5F\xC1\x0B" },
+	{ "Certificate for Card Authentication", "\x5F\xC1\x01" },
+};
+
+const BYTE APDU_PIV_SELECT_AID[] = { 0x00, 0xA4, 0x04, 0x00, 0x09, 0xA0, 0x00, 0x00,
+	                                 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x00 };
+const BYTE APDU_PIV_GET_CHUID[] = {
+	0x00, 0xCB, 0x3F, 0xFF, 0x05, 0x5C, 0x03, 0x5F, 0xC1, 0x02, 0x00
+};
+#define PIV_CONTAINER_NAME_LEN 36
+
+static CK_OBJECT_CLASS object_class_public_key = CKO_PUBLIC_KEY;
+static CK_BBOOL object_verify = CK_TRUE;
 static CK_KEY_TYPE object_ktype_rsa = CKK_RSA;
 
-static CK_ATTRIBUTE private_key_filter[] = {
-	{ CKA_CLASS, &object_class_private_key, sizeof(object_class_private_key) },
-	{ CKA_SIGN, &object_sign, sizeof(object_sign) },
+static CK_ATTRIBUTE public_key_filter[] = {
+	{ CKA_CLASS, &object_class_public_key, sizeof(object_class_public_key) },
+	{ CKA_VERIFY, &object_verify, sizeof(object_verify) },
 	{ CKA_KEY_TYPE, &object_ktype_rsa, sizeof(object_ktype_rsa) }
 };
 
@@ -100,7 +120,7 @@ static SECURITY_STATUS NCryptP11StorageProvider_dtor(NCRYPT_HANDLE handle)
 	return winpr_NCryptDefault_dtor(handle);
 }
 
-static void fix_padded_string(char *str, size_t maxlen)
+static void fix_padded_string(char* str, size_t maxlen)
 {
 	char* ptr = str + maxlen - 1;
 
@@ -216,104 +236,105 @@ static CK_RV object_load_attributes(NCryptP11ProviderHandle* provider, CK_SESSIO
 static const char* CK_RV_error_string(CK_RV rv)
 {
 	static char generic_buffer[200];
-#define ERR_ENTRY(X) case X: return #X
+#define ERR_ENTRY(X) \
+	case X:          \
+		return #X
 
 	switch (rv)
 	{
-	ERR_ENTRY(CKR_OK);
-	ERR_ENTRY(CKR_CANCEL);
-	ERR_ENTRY(CKR_HOST_MEMORY);
-	ERR_ENTRY(CKR_SLOT_ID_INVALID);
-	ERR_ENTRY(CKR_GENERAL_ERROR);
-	ERR_ENTRY(CKR_FUNCTION_FAILED);
-	ERR_ENTRY(CKR_ARGUMENTS_BAD);
-	ERR_ENTRY(CKR_NO_EVENT);
-	ERR_ENTRY(CKR_NEED_TO_CREATE_THREADS);
-	ERR_ENTRY(CKR_CANT_LOCK);
-	ERR_ENTRY(CKR_ATTRIBUTE_READ_ONLY);
-	ERR_ENTRY(CKR_ATTRIBUTE_SENSITIVE);
-	ERR_ENTRY(CKR_ATTRIBUTE_TYPE_INVALID);
-	ERR_ENTRY(CKR_ATTRIBUTE_VALUE_INVALID);
-	ERR_ENTRY(CKR_DATA_INVALID);
-	ERR_ENTRY(CKR_DATA_LEN_RANGE);
-	ERR_ENTRY(CKR_DEVICE_ERROR);
-	ERR_ENTRY(CKR_DEVICE_MEMORY);
-	ERR_ENTRY(CKR_DEVICE_REMOVED);
-	ERR_ENTRY(CKR_ENCRYPTED_DATA_INVALID);
-	ERR_ENTRY(CKR_ENCRYPTED_DATA_LEN_RANGE);
-	ERR_ENTRY(CKR_FUNCTION_CANCELED);
-	ERR_ENTRY(CKR_FUNCTION_NOT_PARALLEL);
-	ERR_ENTRY(CKR_FUNCTION_NOT_SUPPORTED);
-	ERR_ENTRY(CKR_KEY_HANDLE_INVALID);
-	ERR_ENTRY(CKR_KEY_SIZE_RANGE);
-	ERR_ENTRY(CKR_KEY_TYPE_INCONSISTENT);
-	ERR_ENTRY(CKR_KEY_NOT_NEEDED);
-	ERR_ENTRY(CKR_KEY_CHANGED);
-	ERR_ENTRY(CKR_KEY_NEEDED);
-	ERR_ENTRY(CKR_KEY_INDIGESTIBLE);
-	ERR_ENTRY(CKR_KEY_FUNCTION_NOT_PERMITTED);
-	ERR_ENTRY(CKR_KEY_NOT_WRAPPABLE);
-	ERR_ENTRY(CKR_KEY_UNEXTRACTABLE);
-	ERR_ENTRY(CKR_MECHANISM_INVALID);
-	ERR_ENTRY(CKR_MECHANISM_PARAM_INVALID);
-	ERR_ENTRY(CKR_OBJECT_HANDLE_INVALID);
-	ERR_ENTRY(CKR_OPERATION_ACTIVE);
-	ERR_ENTRY(CKR_OPERATION_NOT_INITIALIZED);
-	ERR_ENTRY(CKR_PIN_INCORRECT);
-	ERR_ENTRY(CKR_PIN_INVALID);
-	ERR_ENTRY(CKR_PIN_LEN_RANGE);
-	ERR_ENTRY(CKR_PIN_EXPIRED);
-	ERR_ENTRY(CKR_PIN_LOCKED);
-	ERR_ENTRY(CKR_SESSION_CLOSED);
-	ERR_ENTRY(CKR_SESSION_COUNT);
-	ERR_ENTRY(CKR_SESSION_HANDLE_INVALID);
-	ERR_ENTRY(CKR_SESSION_PARALLEL_NOT_SUPPORTED);
-	ERR_ENTRY(CKR_SESSION_READ_ONLY);
-	ERR_ENTRY(CKR_SESSION_EXISTS);
-	ERR_ENTRY(CKR_SESSION_READ_ONLY_EXISTS);
-	ERR_ENTRY(CKR_SESSION_READ_WRITE_SO_EXISTS);
-	ERR_ENTRY(CKR_SIGNATURE_INVALID);
-	ERR_ENTRY(CKR_SIGNATURE_LEN_RANGE);
-	ERR_ENTRY(CKR_TEMPLATE_INCOMPLETE);
-	ERR_ENTRY(CKR_TEMPLATE_INCONSISTENT);
-	ERR_ENTRY(CKR_TOKEN_NOT_PRESENT);
-	ERR_ENTRY(CKR_TOKEN_NOT_RECOGNIZED);
-	ERR_ENTRY(CKR_TOKEN_WRITE_PROTECTED);
-	ERR_ENTRY(CKR_UNWRAPPING_KEY_HANDLE_INVALID);
-	ERR_ENTRY(CKR_UNWRAPPING_KEY_SIZE_RANGE);
-	ERR_ENTRY(CKR_UNWRAPPING_KEY_TYPE_INCONSISTENT);
-	ERR_ENTRY(CKR_USER_ALREADY_LOGGED_IN);
-	ERR_ENTRY(CKR_USER_NOT_LOGGED_IN);
-	ERR_ENTRY(CKR_USER_PIN_NOT_INITIALIZED);
-	ERR_ENTRY(CKR_USER_TYPE_INVALID);
-	ERR_ENTRY(CKR_USER_ANOTHER_ALREADY_LOGGED_IN);
-	ERR_ENTRY(CKR_USER_TOO_MANY_TYPES);
-	ERR_ENTRY(CKR_WRAPPED_KEY_INVALID);
-	ERR_ENTRY(CKR_WRAPPED_KEY_LEN_RANGE);
-	ERR_ENTRY(CKR_WRAPPING_KEY_HANDLE_INVALID);
-	ERR_ENTRY(CKR_WRAPPING_KEY_SIZE_RANGE);
-	ERR_ENTRY(CKR_WRAPPING_KEY_TYPE_INCONSISTENT);
-	ERR_ENTRY(CKR_RANDOM_SEED_NOT_SUPPORTED);
-	ERR_ENTRY(CKR_RANDOM_NO_RNG);
-	ERR_ENTRY(CKR_DOMAIN_PARAMS_INVALID);
-	ERR_ENTRY(CKR_BUFFER_TOO_SMALL);
-	ERR_ENTRY(CKR_SAVED_STATE_INVALID);
-	ERR_ENTRY(CKR_INFORMATION_SENSITIVE);
-	ERR_ENTRY(CKR_STATE_UNSAVEABLE);
-	ERR_ENTRY(CKR_CRYPTOKI_NOT_INITIALIZED);
-	ERR_ENTRY(CKR_CRYPTOKI_ALREADY_INITIALIZED);
-	ERR_ENTRY(CKR_MUTEX_BAD);
-	ERR_ENTRY(CKR_MUTEX_NOT_LOCKED);
-	ERR_ENTRY(CKR_FUNCTION_REJECTED);
-	default:
-		snprintf(generic_buffer, sizeof(generic_buffer), "unknown 0x%lx", rv);
-		return generic_buffer;
+		ERR_ENTRY(CKR_OK);
+		ERR_ENTRY(CKR_CANCEL);
+		ERR_ENTRY(CKR_HOST_MEMORY);
+		ERR_ENTRY(CKR_SLOT_ID_INVALID);
+		ERR_ENTRY(CKR_GENERAL_ERROR);
+		ERR_ENTRY(CKR_FUNCTION_FAILED);
+		ERR_ENTRY(CKR_ARGUMENTS_BAD);
+		ERR_ENTRY(CKR_NO_EVENT);
+		ERR_ENTRY(CKR_NEED_TO_CREATE_THREADS);
+		ERR_ENTRY(CKR_CANT_LOCK);
+		ERR_ENTRY(CKR_ATTRIBUTE_READ_ONLY);
+		ERR_ENTRY(CKR_ATTRIBUTE_SENSITIVE);
+		ERR_ENTRY(CKR_ATTRIBUTE_TYPE_INVALID);
+		ERR_ENTRY(CKR_ATTRIBUTE_VALUE_INVALID);
+		ERR_ENTRY(CKR_DATA_INVALID);
+		ERR_ENTRY(CKR_DATA_LEN_RANGE);
+		ERR_ENTRY(CKR_DEVICE_ERROR);
+		ERR_ENTRY(CKR_DEVICE_MEMORY);
+		ERR_ENTRY(CKR_DEVICE_REMOVED);
+		ERR_ENTRY(CKR_ENCRYPTED_DATA_INVALID);
+		ERR_ENTRY(CKR_ENCRYPTED_DATA_LEN_RANGE);
+		ERR_ENTRY(CKR_FUNCTION_CANCELED);
+		ERR_ENTRY(CKR_FUNCTION_NOT_PARALLEL);
+		ERR_ENTRY(CKR_FUNCTION_NOT_SUPPORTED);
+		ERR_ENTRY(CKR_KEY_HANDLE_INVALID);
+		ERR_ENTRY(CKR_KEY_SIZE_RANGE);
+		ERR_ENTRY(CKR_KEY_TYPE_INCONSISTENT);
+		ERR_ENTRY(CKR_KEY_NOT_NEEDED);
+		ERR_ENTRY(CKR_KEY_CHANGED);
+		ERR_ENTRY(CKR_KEY_NEEDED);
+		ERR_ENTRY(CKR_KEY_INDIGESTIBLE);
+		ERR_ENTRY(CKR_KEY_FUNCTION_NOT_PERMITTED);
+		ERR_ENTRY(CKR_KEY_NOT_WRAPPABLE);
+		ERR_ENTRY(CKR_KEY_UNEXTRACTABLE);
+		ERR_ENTRY(CKR_MECHANISM_INVALID);
+		ERR_ENTRY(CKR_MECHANISM_PARAM_INVALID);
+		ERR_ENTRY(CKR_OBJECT_HANDLE_INVALID);
+		ERR_ENTRY(CKR_OPERATION_ACTIVE);
+		ERR_ENTRY(CKR_OPERATION_NOT_INITIALIZED);
+		ERR_ENTRY(CKR_PIN_INCORRECT);
+		ERR_ENTRY(CKR_PIN_INVALID);
+		ERR_ENTRY(CKR_PIN_LEN_RANGE);
+		ERR_ENTRY(CKR_PIN_EXPIRED);
+		ERR_ENTRY(CKR_PIN_LOCKED);
+		ERR_ENTRY(CKR_SESSION_CLOSED);
+		ERR_ENTRY(CKR_SESSION_COUNT);
+		ERR_ENTRY(CKR_SESSION_HANDLE_INVALID);
+		ERR_ENTRY(CKR_SESSION_PARALLEL_NOT_SUPPORTED);
+		ERR_ENTRY(CKR_SESSION_READ_ONLY);
+		ERR_ENTRY(CKR_SESSION_EXISTS);
+		ERR_ENTRY(CKR_SESSION_READ_ONLY_EXISTS);
+		ERR_ENTRY(CKR_SESSION_READ_WRITE_SO_EXISTS);
+		ERR_ENTRY(CKR_SIGNATURE_INVALID);
+		ERR_ENTRY(CKR_SIGNATURE_LEN_RANGE);
+		ERR_ENTRY(CKR_TEMPLATE_INCOMPLETE);
+		ERR_ENTRY(CKR_TEMPLATE_INCONSISTENT);
+		ERR_ENTRY(CKR_TOKEN_NOT_PRESENT);
+		ERR_ENTRY(CKR_TOKEN_NOT_RECOGNIZED);
+		ERR_ENTRY(CKR_TOKEN_WRITE_PROTECTED);
+		ERR_ENTRY(CKR_UNWRAPPING_KEY_HANDLE_INVALID);
+		ERR_ENTRY(CKR_UNWRAPPING_KEY_SIZE_RANGE);
+		ERR_ENTRY(CKR_UNWRAPPING_KEY_TYPE_INCONSISTENT);
+		ERR_ENTRY(CKR_USER_ALREADY_LOGGED_IN);
+		ERR_ENTRY(CKR_USER_NOT_LOGGED_IN);
+		ERR_ENTRY(CKR_USER_PIN_NOT_INITIALIZED);
+		ERR_ENTRY(CKR_USER_TYPE_INVALID);
+		ERR_ENTRY(CKR_USER_ANOTHER_ALREADY_LOGGED_IN);
+		ERR_ENTRY(CKR_USER_TOO_MANY_TYPES);
+		ERR_ENTRY(CKR_WRAPPED_KEY_INVALID);
+		ERR_ENTRY(CKR_WRAPPED_KEY_LEN_RANGE);
+		ERR_ENTRY(CKR_WRAPPING_KEY_HANDLE_INVALID);
+		ERR_ENTRY(CKR_WRAPPING_KEY_SIZE_RANGE);
+		ERR_ENTRY(CKR_WRAPPING_KEY_TYPE_INCONSISTENT);
+		ERR_ENTRY(CKR_RANDOM_SEED_NOT_SUPPORTED);
+		ERR_ENTRY(CKR_RANDOM_NO_RNG);
+		ERR_ENTRY(CKR_DOMAIN_PARAMS_INVALID);
+		ERR_ENTRY(CKR_BUFFER_TOO_SMALL);
+		ERR_ENTRY(CKR_SAVED_STATE_INVALID);
+		ERR_ENTRY(CKR_INFORMATION_SENSITIVE);
+		ERR_ENTRY(CKR_STATE_UNSAVEABLE);
+		ERR_ENTRY(CKR_CRYPTOKI_NOT_INITIALIZED);
+		ERR_ENTRY(CKR_CRYPTOKI_ALREADY_INITIALIZED);
+		ERR_ENTRY(CKR_MUTEX_BAD);
+		ERR_ENTRY(CKR_MUTEX_NOT_LOCKED);
+		ERR_ENTRY(CKR_FUNCTION_REJECTED);
+		default:
+			snprintf(generic_buffer, sizeof(generic_buffer), "unknown 0x%lx", rv);
+			return generic_buffer;
 	}
 #undef ERR_ENTRY
 }
 
-static SECURITY_STATUS collect_private_keys(NCryptP11ProviderHandle* provider,
-                                            P11EnumKeysState* state)
+static SECURITY_STATUS collect_keys(NCryptP11ProviderHandle* provider, P11EnumKeysState* state)
 {
 	CK_RV rv;
 	CK_ULONG i, j, nslotObjects;
@@ -326,7 +347,7 @@ static SECURITY_STATUS collect_private_keys(NCryptP11ProviderHandle* provider,
 	p11 = provider->p11;
 	WINPR_ASSERT(p11);
 
-	state->nprivateKeys = 0;
+	state->nKeys = 0;
 	for (i = 0; i < state->nslots; i++)
 	{
 		CK_SESSION_HANDLE session = (CK_SESSION_HANDLE)NULL;
@@ -341,11 +362,12 @@ static SECURITY_STATUS collect_private_keys(NCryptP11ProviderHandle* provider,
 			continue;
 		}
 
-		fix_padded_string((char *)slotInfo.slotDescription, sizeof(slotInfo.slotDescription));
-		WLog_DBG(TAG, "%s: collecting private keys for slot #%d(%lu) descr='%s' flags=0x%x", __FUNCTION__, i,
-				state->slots[i], slotInfo.slotDescription, slotInfo.flags);
+		fix_padded_string((char*)slotInfo.slotDescription, sizeof(slotInfo.slotDescription));
+		WLog_DBG(TAG, "%s: collecting keys for slot #%d(%lu) descr='%s' flags=0x%x", __FUNCTION__,
+		         i, state->slots[i], slotInfo.slotDescription, slotInfo.flags);
 
-		/* this is a safety guard as we're supposed to have listed only readers with tokens in them */
+		/* this is a safety guard as we're supposed to have listed only readers with tokens in them
+		 */
 		if (!(slotInfo.flags & CKF_TOKEN_PRESENT))
 		{
 			WLog_INFO(TAG, "token not present for slot #%d(%d)", i, state->slots[i]);
@@ -360,27 +382,27 @@ static SECURITY_STATUS collect_private_keys(NCryptP11ProviderHandle* provider,
 		}
 		else
 		{
-			fix_padded_string((char *)tokenInfo.label, sizeof(tokenInfo.label));
+			fix_padded_string((char*)tokenInfo.label, sizeof(tokenInfo.label));
 			WLog_DBG(TAG, "%s: token, label='%s' flags=0x%x", __FUNCTION__, tokenInfo.label,
-					tokenInfo.flags);
+			         tokenInfo.flags);
 		}
 
 		WINPR_ASSERT(p11->C_OpenSession);
 		rv = p11->C_OpenSession(state->slots[i], CKF_SERIAL_SESSION, NULL, NULL, &session);
 		if (rv != CKR_OK)
 		{
-			WLog_ERR(TAG, "unable to openSession for slot #%d(%d), session=%p rv=%s", i, state->slots[i],
-					session, CK_RV_error_string(rv));
+			WLog_ERR(TAG, "unable to openSession for slot #%d(%d), session=%p rv=%s", i,
+			         state->slots[i], session, CK_RV_error_string(rv));
 			continue;
 		}
 
 		WINPR_ASSERT(p11->C_FindObjectsInit);
-		rv = p11->C_FindObjectsInit(session, private_key_filter, ARRAYSIZE(private_key_filter));
+		rv = p11->C_FindObjectsInit(session, public_key_filter, ARRAYSIZE(public_key_filter));
 		if (rv != CKR_OK)
 		{
 			// TODO: shall it be fatal ?
 			WLog_ERR(TAG, "unable to initiate search for slot #%d(%d), rv=%s", i, state->slots[i],
-					CK_RV_error_string(rv));
+			         CK_RV_error_string(rv));
 			step = "C_FindObjectsInit";
 			goto cleanup_FindObjectsInit;
 		}
@@ -390,7 +412,7 @@ static SECURITY_STATUS collect_private_keys(NCryptP11ProviderHandle* provider,
 		if (rv != CKR_OK)
 		{
 			WLog_ERR(TAG, "unable to findObjects for slot #%d(%d), rv=%s", i, state->slots[i],
-					CK_RV_error_string(rv));
+			         CK_RV_error_string(rv));
 			step = "C_FindObjects";
 			goto cleanup_FindObjects;
 		}
@@ -398,13 +420,13 @@ static SECURITY_STATUS collect_private_keys(NCryptP11ProviderHandle* provider,
 		WLog_DBG(TAG, "%s: slot has %d objects", __FUNCTION__, nslotObjects);
 		for (j = 0; j < nslotObjects; j++)
 		{
-			NCryptPrivateKeyEnum* privKey = &state->privateKeys[state->nprivateKeys];
-			CK_OBJECT_CLASS dataClass = CKO_PRIVATE_KEY;
+			NCryptKeyEnum* key = &state->keys[state->nKeys];
+			CK_OBJECT_CLASS dataClass = CKO_PUBLIC_KEY;
 			CK_ATTRIBUTE key_or_certAttrs[] = {
-				{ CKA_ID, &privKey->id, sizeof(privKey->id) },
+				{ CKA_ID, &key->id, sizeof(key->id) },
 				{ CKA_CLASS, &dataClass, sizeof(dataClass) },
-				{ CKA_LABEL, &privKey->keyLabel, sizeof(privKey->keyLabel) },
-				{ CKA_KEY_TYPE, &privKey->keyType, sizeof(privKey->keyType) }
+				{ CKA_LABEL, &key->keyLabel, sizeof(key->keyLabel) },
+				{ CKA_KEY_TYPE, &key->keyType, sizeof(key->keyType) }
 			};
 
 			rv = object_load_attributes(provider, session, slotObjects[j], key_or_certAttrs,
@@ -415,10 +437,10 @@ static SECURITY_STATUS collect_private_keys(NCryptP11ProviderHandle* provider,
 				continue;
 			}
 
-			privKey->idLen = key_or_certAttrs[0].ulValueLen;
-			privKey->slotId = state->slots[i];
-			privKey->slotInfo = slotInfo;
-			state->nprivateKeys++;
+			key->idLen = key_or_certAttrs[0].ulValueLen;
+			key->slotId = state->slots[i];
+			key->slotInfo = slotInfo;
+			state->nKeys++;
 		}
 
 	cleanup_FindObjects:
@@ -426,8 +448,8 @@ static SECURITY_STATUS collect_private_keys(NCryptP11ProviderHandle* provider,
 		rv = p11->C_FindObjectsFinal(session);
 		if (rv != CKR_OK)
 		{
-			WLog_ERR(TAG, "error during C_FindObjectsFinal for slot #%d(%d) (errorStep=%s), rv=%s", i,
-			         state->slots[i], step,	CK_RV_error_string(rv));
+			WLog_ERR(TAG, "error during C_FindObjectsFinal for slot #%d(%d) (errorStep=%s), rv=%s",
+			         i, state->slots[i], step, CK_RV_error_string(rv));
 		}
 	cleanup_FindObjectsInit:
 		WINPR_ASSERT(p11->C_CloseSession);
@@ -435,7 +457,7 @@ static SECURITY_STATUS collect_private_keys(NCryptP11ProviderHandle* provider,
 		if (rv != CKR_OK)
 		{
 			WLog_ERR(TAG, "error closing session for slot #%d(%d) (errorStep=%s), rv=%s", i,
-			         state->slots[i], step,	CK_RV_error_string(rv));
+			         state->slots[i], step, CK_RV_error_string(rv));
 		}
 	}
 
@@ -517,13 +539,15 @@ static void wprintKeyName(LPWSTR str, CK_SLOT_ID slotId, CK_BYTE* id, CK_ULONG i
 	const CK_BYTE* bytePtr;
 	CK_ULONG i;
 
-	*ptr = '\\'; ptr++;
+	*ptr = '\\';
+	ptr++;
 
 	bytePtr = ((CK_BYTE*)&slotId);
 	for (i = 0; i < sizeof(slotId); i++, bytePtr++, ptr += 2)
 		snprintf(ptr, 3, "%.2x", *bytePtr);
 
-	*ptr = '\\'; ptr++;
+	*ptr = '\\';
+	ptr++;
 
 	for (i = 0; i < idLen; i++, id++, ptr += 2)
 		snprintf(ptr, 3, "%.2x", *id);
@@ -683,7 +707,7 @@ static SECURITY_STATUS NCryptP11EnumKeys(NCRYPT_PROV_HANDLE hProvider, LPCWSTR p
 			return NTE_FAIL;
 		}
 
-		ret = collect_private_keys(provider, state);
+		ret = collect_keys(provider, state);
 		if (ret != ERROR_SUCCESS)
 		{
 			free(state);
@@ -693,25 +717,25 @@ static SECURITY_STATUS NCryptP11EnumKeys(NCRYPT_PROV_HANDLE hProvider, LPCWSTR p
 		*ppEnumState = state;
 	}
 
-	for (; state->privateKeyIndex < state->nprivateKeys; state->privateKeyIndex++)
+	for (; state->keyIndex < state->nKeys; state->keyIndex++)
 	{
 		NCryptKeyName* keyName = NULL;
-		NCryptPrivateKeyEnum* privKey = &state->privateKeys[state->privateKeyIndex];
+		NCryptKeyEnum* key = &state->keys[state->keyIndex];
 		CK_OBJECT_CLASS oclass = CKO_CERTIFICATE;
 		CK_CERTIFICATE_TYPE ctype = CKC_X_509;
 		CK_ATTRIBUTE certificateFilter[] = { { CKA_CLASS, &oclass, sizeof(oclass) },
 			                                 { CKA_CERTIFICATE_TYPE, &ctype, sizeof(ctype) },
-			                                 { CKA_ID, privKey->id, privKey->idLen } };
+			                                 { CKA_ID, key->id, key->idLen } };
 		CK_ULONG ncertObjects;
 		CK_OBJECT_HANDLE certObject;
 
 		/* check the reader filter if any */
-		if (slotFilter && memcmp(privKey->slotInfo.slotDescription, slotFilter, slotFilterLen) != 0)
+		if (slotFilter && memcmp(key->slotInfo.slotDescription, slotFilter, slotFilterLen) != 0)
 			continue;
 
-		if (!currentSession || (currentSlot != privKey->slotId))
+		if (!currentSession || (currentSlot != key->slotId))
 		{
-			/* if the current session doesn't match the current private key's slot, open a new one
+			/* if the current session doesn't match the current key's slot, open a new one
 			 */
 			if (currentSession)
 			{
@@ -721,23 +745,23 @@ static SECURITY_STATUS NCryptP11EnumKeys(NCRYPT_PROV_HANDLE hProvider, LPCWSTR p
 			}
 
 			WINPR_ASSERT(provider->p11->C_OpenSession);
-			rv = provider->p11->C_OpenSession(privKey->slotId, CKF_SERIAL_SESSION, NULL, NULL,
+			rv = provider->p11->C_OpenSession(key->slotId, CKF_SERIAL_SESSION, NULL, NULL,
 			                                  &currentSession);
 			if (rv != CKR_OK)
 			{
-				WLog_ERR(TAG, "unable to openSession for slot %d", privKey->slotId);
+				WLog_ERR(TAG, "unable to openSession for slot %d", key->slotId);
 				continue;
 			}
-			currentSlot = privKey->slotId;
+			currentSlot = key->slotId;
 		}
 
-		/* look if we can find a certificate that matches the private key's id */
+		/* look if we can find a certificate that matches the key's id */
 		WINPR_ASSERT(provider->p11->C_FindObjectsInit);
 		rv = provider->p11->C_FindObjectsInit(currentSession, certificateFilter,
 		                                      ARRAYSIZE(certificateFilter));
 		if (rv != CKR_OK)
 		{
-			WLog_ERR(TAG, "unable to initiate search for slot %d", privKey->slotId);
+			WLog_ERR(TAG, "unable to initiate search for slot %d", key->slotId);
 			continue;
 		}
 
@@ -753,9 +777,10 @@ static SECURITY_STATUS NCryptP11EnumKeys(NCRYPT_PROV_HANDLE hProvider, LPCWSTR p
 		{
 			/* sizeof keyName struct + "\<slotId>\<certId>" + keyName->pszAlgid */
 			DWORD algoSz;
-			size_t KEYNAME_SZ = (1 + (sizeof(privKey->slotId) * 2) /*slotId*/ + 1 + (privKey->idLen * 2) + 1) * 2;
+			size_t KEYNAME_SZ =
+			    (1 + (sizeof(key->slotId) * 2) /*slotId*/ + 1 + (key->idLen * 2) + 1) * 2;
 
-			convertKeyType(privKey->keyType, NULL, 0, &algoSz);
+			convertKeyType(key->keyType, NULL, 0, &algoSz);
 			KEYNAME_SZ += (algoSz + 1) * 2;
 
 			keyName = calloc(1, sizeof(*keyName) + KEYNAME_SZ);
@@ -767,10 +792,10 @@ static SECURITY_STATUS NCryptP11EnumKeys(NCRYPT_PROV_HANDLE hProvider, LPCWSTR p
 			keyName->dwLegacyKeySpec = AT_KEYEXCHANGE | AT_SIGNATURE;
 			keyName->dwFlags = NCRYPT_MACHINE_KEY_FLAG;
 			keyName->pszName = (LPWSTR)(keyName + 1);
-			wprintKeyName(keyName->pszName, privKey->slotId, privKey->id, privKey->idLen);
+			wprintKeyName(keyName->pszName, key->slotId, key->id, key->idLen);
 
 			keyName->pszAlgid = keyName->pszName + _wcslen(keyName->pszName) + 1;
-			convertKeyType(privKey->keyType, keyName->pszAlgid, algoSz+1, NULL);
+			convertKeyType(key->keyType, keyName->pszAlgid, algoSz + 1, NULL);
 		}
 
 	cleanup_FindObjects:
@@ -780,12 +805,125 @@ static SECURITY_STATUS NCryptP11EnumKeys(NCRYPT_PROV_HANDLE hProvider, LPCWSTR p
 		if (keyName)
 		{
 			*ppKeyName = keyName;
-			state->privateKeyIndex++;
+			state->keyIndex++;
 			return ERROR_SUCCESS;
 		}
 	}
 
 	return NTE_NO_MORE_ITEMS;
+}
+
+static SECURITY_STATUS get_piv_container_name(NCryptP11KeyHandle* key, BYTE* piv_tag, BYTE* output,
+                                              size_t output_len)
+{
+	CK_SLOT_INFO slot_info = { 0 };
+	CK_FUNCTION_LIST_PTR p11 = NULL;
+	WCHAR* reader = NULL;
+	SCARDCONTEXT context = 0;
+	SCARDHANDLE card = 0;
+	DWORD proto = 0;
+	const SCARD_IO_REQUEST* pci = NULL;
+	BYTE buf[258] = { 0 };
+	char container_name[PIV_CONTAINER_NAME_LEN + 1] = { 0 };
+	DWORD buf_len = 0;
+	SECURITY_STATUS ret = NTE_BAD_KEY;
+	WinPrAsn1Decoder dec = { 0 };
+	WinPrAsn1Decoder dec2 = { 0 };
+	size_t len = 0;
+	BYTE tag = 0;
+	BYTE* p = NULL;
+	wStream s = { 0 };
+
+	WINPR_ASSERT(key);
+	WINPR_ASSERT(piv_tag);
+
+	WINPR_ASSERT(key->provider);
+	p11 = key->provider->p11;
+	WINPR_ASSERT(p11);
+
+	/* Get the reader the card is in */
+	WINPR_ASSERT(p11->C_GetSlotInfo);
+	if (p11->C_GetSlotInfo(key->slotId, &slot_info) != CKR_OK)
+		return NTE_BAD_KEY;
+
+	fix_padded_string((char*)slot_info.slotDescription, sizeof(slot_info.slotDescription));
+	if (ConvertToUnicode(
+	        CP_UTF8, 0, (char*)slot_info.slotDescription,
+	        strnlen((char*)slot_info.slotDescription, sizeof(slot_info.slotDescription)), &reader,
+	        0) < 0)
+		return NTE_NO_MEMORY;
+
+	if (SCardEstablishContext(SCARD_SCOPE_USER, NULL, NULL, &context) != SCARD_S_SUCCESS)
+		return NTE_BAD_KEY;
+
+	if (SCardConnectW(context, reader, SCARD_SHARE_SHARED, SCARD_PROTOCOL_Tx, &card, &proto) !=
+	    SCARD_S_SUCCESS)
+		goto out;
+	pci = (proto == SCARD_PROTOCOL_T0) ? SCARD_PCI_T0 : SCARD_PCI_T1;
+
+	buf_len = sizeof(buf);
+	if (SCardTransmit(card, pci, APDU_PIV_SELECT_AID, sizeof(APDU_PIV_SELECT_AID), NULL, buf,
+	                  &buf_len) != SCARD_S_SUCCESS)
+		goto out;
+	if ((buf[buf_len - 2] != 0x90 || buf[buf_len - 1] != 0) && buf[buf_len - 2] != 0x61)
+		goto out;
+
+	buf_len = sizeof(buf);
+	if (SCardTransmit(card, pci, APDU_PIV_GET_CHUID, sizeof(APDU_PIV_GET_CHUID), NULL, buf,
+	                  &buf_len) != SCARD_S_SUCCESS)
+		goto out;
+	if ((buf[buf_len - 2] != 0x90 || buf[buf_len - 1] != 0) && buf[buf_len - 2] != 0x61)
+		goto out;
+
+	/* Find the GUID field in the CHUID data object */
+	WinPrAsn1Decoder_InitMem(&dec, WINPR_ASN1_BER, buf, buf_len);
+	if (!WinPrAsn1DecReadTagAndLen(&dec, &tag, &len) || tag != 0x53)
+		goto out;
+	while (WinPrAsn1DecReadTagLenValue(&dec, &tag, &len, &dec2) && tag != 0x34)
+		;
+	if (tag != 0x34 || len != 16)
+		goto out;
+
+	s = WinPrAsn1DecGetStream(&dec2);
+	p = Stream_Buffer(&s);
+
+	/* Construct the value Windows would use for a PIV key's container name */
+	snprintf(container_name, PIV_CONTAINER_NAME_LEN + 1,
+	         "%.2x%.2x%.2x%.2x-%.2x%.2x-%.2x%.2x-%.2x%.2x-%.2x%.2x%.2x%.2x%.2x%.2x", p[3], p[2],
+	         p[1], p[0], p[5], p[4], p[7], p[6], p[8], p[9], p[10], p[11], p[12], piv_tag[0],
+	         piv_tag[1], piv_tag[2]);
+
+	/* And convert it to UTF-16 */
+	if (MultiByteToWideChar(CP_UTF8, 0, container_name, PIV_CONTAINER_NAME_LEN, (WCHAR*)output,
+	                        output_len) == PIV_CONTAINER_NAME_LEN)
+		ret = ERROR_SUCCESS;
+
+out:
+	if (card)
+		SCardDisconnect(card, SCARD_LEAVE_CARD);
+	if (context)
+		SCardReleaseContext(context);
+	return ret;
+}
+
+static SECURITY_STATUS check_for_piv_container_name(NCryptP11KeyHandle* key, BYTE* pbOutput,
+                                                    DWORD cbOutput, DWORD* pcbResult, char* label,
+                                                    size_t label_len)
+{
+	for (int i = 0; i < ARRAYSIZE(piv_cert_tags); i++)
+	{
+		if (strncmp(label, piv_cert_tags[i].label, label_len) == 0)
+		{
+			*pcbResult = PIV_CONTAINER_NAME_LEN * sizeof(WCHAR);
+			if (!pbOutput)
+				return ERROR_SUCCESS;
+			else if (cbOutput < PIV_CONTAINER_NAME_LEN * sizeof(WCHAR))
+				return NTE_NO_MEMORY;
+			else
+				return get_piv_container_name(key, piv_cert_tags[i].tag, pbOutput, cbOutput);
+		}
+	}
+	return NTE_NOT_FOUND;
 }
 
 static SECURITY_STATUS NCryptP11KeyGetProperties(NCryptP11KeyHandle* keyHandle,
@@ -815,6 +953,7 @@ static SECURITY_STATUS NCryptP11KeyGetProperties(NCryptP11KeyHandle* keyHandle,
 
 	{
 		case NCRYPT_PROPERTY_CERTIFICATE:
+		case NCRYPT_PROPERTY_NAME:
 			break;
 		case NCRYPT_PROPERTY_READER:
 		{
@@ -902,6 +1041,46 @@ static SECURITY_STATUS NCryptP11KeyGetProperties(NCryptP11KeyHandle* keyHandle,
 
 			*pcbResult = certValue.ulValueLen;
 			ret = ERROR_SUCCESS;
+			break;
+		}
+		case NCRYPT_PROPERTY_NAME:
+		{
+			CK_ATTRIBUTE attr = { CKA_LABEL, NULL, 0 };
+			char* label = NULL;
+
+			WINPR_ASSERT(provider->p11->C_GetAttributeValue);
+			rv = provider->p11->C_GetAttributeValue(session, objectHandle, &attr, 1);
+			if (rv == CKR_OK)
+			{
+				label = calloc(1, attr.ulValueLen);
+				if (!label)
+				{
+					ret = NTE_NO_MEMORY;
+					break;
+				}
+
+				attr.pValue = label;
+				rv = provider->p11->C_GetAttributeValue(session, objectHandle, &attr, 1);
+			}
+
+			if (rv == CKR_OK)
+			{
+				/* Check if we have a PIV card */
+				ret = check_for_piv_container_name(keyHandle, pbOutput, cbOutput, pcbResult, label,
+				                                   attr.ulValueLen);
+
+				/* Otherwise, at least for GIDS cards the label will be the correct value */
+				if (ret == NTE_NOT_FOUND)
+				{
+					*pcbResult =
+					    MultiByteToWideChar(CP_UTF8, 0, label, attr.ulValueLen, (LPWSTR)pbOutput,
+					                        pbOutput ? cbOutput / sizeof(WCHAR) : 0) *
+					    sizeof(WCHAR);
+					ret = ERROR_SUCCESS;
+				}
+			}
+
+			free(label);
 			break;
 		}
 		default:
@@ -1091,4 +1270,3 @@ SECURITY_STATUS NCryptOpenP11StorageProviderEx(NCRYPT_PROV_HANDLE* phProvider,
 
 	return status;
 }
-

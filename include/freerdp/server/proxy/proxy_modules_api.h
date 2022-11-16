@@ -69,15 +69,18 @@ struct proxy_plugin
 	proxyHookFn ClientLoginFailure;    /* 72 custom=rdpContext* */
 	proxyHookFn ClientEndPaint;        /* 73 custom=rdpContext* */
 	proxyHookFn ClientRedirect;        /* 74 custom=rdpContext* */
-	UINT64 reserved3[96 - 75];         /* 75-95 */
+	proxyHookFn ClientLoadChannels;    /* 75 custom=rdpContext* */
+	UINT64 reserved3[96 - 76];         /* 76-95 */
 
-	proxyHookFn ServerPostConnect;  /* 96  custom=freerdp_peer* */
-	proxyHookFn ServerPeerActivate; /* 97  custom=freerdp_peer* */
-	proxyHookFn ServerChannelsInit; /* 98  custom=freerdp_peer* */
-	proxyHookFn ServerChannelsFree; /* 99  custom=freerdp_peer* */
-	proxyHookFn ServerSessionEnd;   /* 100 custom=freerdp_peer* */
+	proxyHookFn ServerPostConnect;       /* 96  custom=freerdp_peer* */
+	proxyHookFn ServerPeerActivate;      /* 97  custom=freerdp_peer* */
+	proxyHookFn ServerChannelsInit;      /* 98  custom=freerdp_peer* */
+	proxyHookFn ServerChannelsFree;      /* 99  custom=freerdp_peer* */
+	proxyHookFn ServerSessionEnd;        /* 100 custom=freerdp_peer* */
+	proxyHookFn ServerSessionInitialize; /* 101 custom=freerdp_peer* */
+	proxyHookFn ServerSessionStarted;    /* 102 custom=freerdp_peer* */
 
-	UINT64 reserved4[128 - 101]; /* 101 - 127 */
+	UINT64 reserved4[128 - 103]; /* 103 - 127 */
 
 	/* proxy filters. a module can set these function pointers to register filters */
 	proxyFilterFn KeyboardEvent;         /* 128 */
@@ -88,8 +91,9 @@ struct proxy_plugin
 	proxyFilterFn ServerFetchTargetAddr; /* 133 */
 	proxyFilterFn ServerPeerLogon;       /* 134 */
 	proxyFilterFn ChannelCreate;         /* 135 passthrough drdynvc channel create data */
-
-	UINT64 reserved5[160 - 136]; /* 136-159 */
+	proxyFilterFn UnicodeEvent;          /* 136 */
+	proxyFilterFn MouseExEvent;          /* 137 */
+	UINT64 reserved5[160 - 138];         /* 138-159 */
 
 	/* Runtime data fields */
 	proxyPluginsManager* mgr; /* 160 */ /** Set during plugin registration */
@@ -137,12 +141,25 @@ typedef struct proxy_keyboard_event_info
 	UINT16 rdp_scan_code;
 } proxyKeyboardEventInfo;
 
+typedef struct proxy_unicode_event_info
+{
+	UINT16 flags;
+	UINT16 code;
+} proxyUnicodeEventInfo;
+
 typedef struct proxy_mouse_event_info
 {
 	UINT16 flags;
 	UINT16 x;
 	UINT16 y;
 } proxyMouseEventInfo;
+
+typedef struct proxy_mouse_ex_event_info
+{
+	UINT16 flags;
+	UINT16 x;
+	UINT16 y;
+} proxyMouseExEventInfo;
 
 typedef struct
 {
