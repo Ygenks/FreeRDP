@@ -27,6 +27,7 @@
 #include <winpr/crt.h>
 
 #include <freerdp/channels/log.h>
+#include <freerdp/freerdp.h>
 
 #include "rail_orders.h"
 
@@ -429,7 +430,7 @@ BOOL rail_is_feature_supported(const rdpContext* context, UINT32 featureMask)
 		char mask[256] = { 0 };
 		char actual[256] = { 0 };
 
-		WLog_WARN(TAG, "[%s] have %s, require %s", __func__,
+		WLog_WARN(TAG, "have %s, require %s",
 		          freerdp_rail_support_flags_to_string(supported, actual, sizeof(actual)),
 		          freerdp_rail_support_flags_to_string(featureMask, mask, sizeof(mask)));
 		return FALSE;

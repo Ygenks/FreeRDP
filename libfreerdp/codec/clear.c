@@ -84,11 +84,9 @@ static const BYTE CLEAR_8BIT_MASKS[9] = { 0x00, 0x01, 0x03, 0x07, 0x0F, 0x1F, 0x
 
 static void clear_reset_vbar_storage(CLEAR_CONTEXT* clear, BOOL zero)
 {
-	int i;
-
 	if (zero)
 	{
-		for (i = 0; i < ARRAYSIZE(clear->VBarStorage); i++)
+		for (size_t i = 0; i < ARRAYSIZE(clear->VBarStorage); i++)
 			free(clear->VBarStorage[i].pixels);
 
 		ZeroMemory(clear->VBarStorage, sizeof(clear->VBarStorage));
@@ -98,7 +96,7 @@ static void clear_reset_vbar_storage(CLEAR_CONTEXT* clear, BOOL zero)
 
 	if (zero)
 	{
-		for (i = 0; i < ARRAYSIZE(clear->ShortVBarStorage); i++)
+		for (size_t i = 0; i < ARRAYSIZE(clear->ShortVBarStorage); i++)
 			free(clear->ShortVBarStorage[i].pixels);
 
 		ZeroMemory(clear->ShortVBarStorage, sizeof(clear->ShortVBarStorage));
@@ -109,9 +107,7 @@ static void clear_reset_vbar_storage(CLEAR_CONTEXT* clear, BOOL zero)
 
 static void clear_reset_glyph_cache(CLEAR_CONTEXT* clear)
 {
-	int i;
-
-	for (i = 0; i < ARRAYSIZE(clear->GlyphCache); i++)
+	for (size_t i = 0; i < ARRAYSIZE(clear->GlyphCache); i++)
 		free(clear->GlyphCache[i].pixels);
 
 	ZeroMemory(clear->GlyphCache, sizeof(clear->GlyphCache));
@@ -129,7 +125,7 @@ static BOOL convert_color(BYTE* dst, UINT32 nDstStep, UINT32 DstFormat, UINT32 n
 		nHeight = nDstHeight - nYDst;
 
 	return freerdp_image_copy(dst, DstFormat, nDstStep, nXDst, nYDst, nWidth, nHeight, src,
-	                          SrcFormat, nSrcStep, 0, 0, palette, 0);
+	                          SrcFormat, nSrcStep, 0, 0, palette, FREERDP_KEEP_DST_ALPHA);
 }
 
 static BOOL clear_decompress_nscodec(NSC_CONTEXT* nsc, UINT32 width, UINT32 height, wStream* s,
@@ -180,7 +176,7 @@ static BOOL clear_decompress_subcode_rlex(wStream* s, UINT32 bitmapDataByteCount
 		return FALSE;
 	}
 
-	if (!Stream_CheckAndLogRequiredLength(TAG, s, 3ull * paletteCount))
+	if (!Stream_CheckAndLogRequiredLengthOfSize(TAG, s, paletteCount, 3ull))
 		return FALSE;
 
 	for (i = 0; i < paletteCount; i++)
@@ -693,7 +689,7 @@ static BOOL clear_decompress_bands_data(CLEAR_CONTEXT* clear, wStream* s, UINT32
 					return FALSE;
 				}
 
-				if (!Stream_CheckAndLogRequiredLength(TAG, s, 3ull * vBarShortPixelCount))
+				if (!Stream_CheckAndLogRequiredLengthOfSize(TAG, s, vBarShortPixelCount, 3ull))
 					return FALSE;
 
 				if (clear->ShortVBarStorageCursor >= CLEARCODEC_VBAR_SHORT_SIZE)
@@ -1107,7 +1103,7 @@ INT32 clear_decompress(CLEAR_CONTEXT* clear, const BYTE* pSrcData, UINT32 SrcSiz
 	if (glyphData)
 	{
 		if (!freerdp_image_copy(glyphData, clear->format, 0, 0, 0, nWidth, nHeight, pDstData,
-		                        DstFormat, nDstStep, nXDst, nYDst, palette, FREERDP_FLIP_NONE))
+		                        DstFormat, nDstStep, nXDst, nYDst, palette, FREERDP_KEEP_DST_ALPHA))
 			goto fail;
 	}
 
@@ -1120,7 +1116,7 @@ fail:
 int clear_compress(CLEAR_CONTEXT* clear, const BYTE* pSrcData, UINT32 SrcSize, BYTE** ppDstData,
                    UINT32* pDstSize)
 {
-	WLog_ERR(TAG, "TODO: %s not implemented!", __FUNCTION__);
+	WLog_ERR(TAG, "TODO: not implemented!");
 	return 1;
 }
 

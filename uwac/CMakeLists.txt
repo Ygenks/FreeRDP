@@ -24,7 +24,7 @@ set(UWAC_VERSION_FULL "${UWAC_VERSION}")
 set(UWAC_API_VERSION "${UWAC_VERSION_MAJOR}")
 
 if (NOT FREERDP_UNIFIED_BUILD)
-	cmake_minimum_required(VERSION 3.9)
+	cmake_minimum_required(VERSION 3.13)
 	project(uwac VERSION ${UWAC_VERSION} LANGUAGES C)
 
 	set(CMAKE_C_STANDARD 11)
@@ -52,7 +52,7 @@ if (NOT FREERDP_UNIFIED_BUILD)
     endif()
 endif()
 
-option(HAVE_PIXMAN_REGION "Use PIXMAN or FreeRDP for region calculations" "NOT FREERDP_UNIFIED_BUILD")
+option(UWAC_HAVE_PIXMAN_REGION "Use PIXMAN or FreeRDP for region calculations" "NOT FREERDP_UNIFIED_BUILD")
 
 # Include our extra modules
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../cmake/)
@@ -69,16 +69,14 @@ endif()
 
 if (NOT IOS)
 	include(CheckIncludeFiles)
-	check_include_files(stdbool.h WINPR_HAVE_STDBOOL_H)
-	if (NOT WINPR_HAVE_STDBOOL_H)
+    check_include_files(stdbool.h UWAC_HAVE_STDBOOL_H)
+    if (NOT UWAC_HAVE_STDBOOL_H)
 		include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/../compat/stdbool)
 	endif()
-else()
-	set(WINPR_HAVE_STDBOOL_H 1)
 endif()
 
 # Find required libraries
-if (HAVE_PIXMAN_REGION)
+if (UWAC_HAVE_PIXMAN_REGION)
 	include(FindPkgConfig)
 	pkg_check_modules(pixman REQUIRED pixman-1)
 	include_directories(${pixman_INCLUDE_DIRS})

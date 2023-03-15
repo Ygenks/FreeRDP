@@ -25,6 +25,7 @@
 #include <winpr/print.h>
 #include <winpr/stream.h>
 
+#include <freerdp/freerdp.h>
 #include <freerdp/channels/log.h>
 
 #include "encomsp_main.h"
@@ -67,7 +68,7 @@ static int encomsp_read_unicode_string(wStream* s, ENCOMSP_UNICODE_STRING* str)
 	if (str->cchString > 1024)
 		return -1;
 
-	if (!Stream_CheckAndLogRequiredLength(TAG, s, (str->cchString * 2ull)))
+    if (!Stream_CheckAndLogRequiredLengthOfSize(TAG, s, str->cchString, sizeof(WCHAR)))
 		return -1;
 
 	Stream_Read(s, &(str->wString), (str->cchString * 2)); /* String (variable) */

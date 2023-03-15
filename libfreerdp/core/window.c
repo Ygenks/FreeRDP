@@ -70,7 +70,7 @@ BOOL rail_read_unicode_string(wStream* s, RAIL_UNICODE_STRING* unicode_string)
 BOOL utf8_string_to_rail_string(const char* string, RAIL_UNICODE_STRING* unicode_string)
 {
 	WCHAR* buffer = NULL;
-	int length = 0;
+	size_t len = 0;
 	free(unicode_string->string);
 	unicode_string->string = NULL;
 	unicode_string->length = 0;
@@ -78,16 +78,16 @@ BOOL utf8_string_to_rail_string(const char* string, RAIL_UNICODE_STRING* unicode
 	if (!string || strlen(string) < 1)
 		return TRUE;
 
-	length = ConvertToUnicode(CP_UTF8, 0, string, -1, &buffer, 0);
+	buffer = ConvertUtf8ToWCharAlloc(string, &len);
 
-	if ((length < 0) || ((size_t)length * sizeof(WCHAR) > UINT16_MAX))
+	if (!buffer || (len * sizeof(WCHAR) > UINT16_MAX))
 	{
 		free(buffer);
 		return FALSE;
 	}
 
 	unicode_string->string = (BYTE*)buffer;
-	unicode_string->length = (UINT16)length * sizeof(WCHAR);
+	unicode_string->length = (UINT16)len * sizeof(WCHAR);
 	return TRUE;
 }
 
@@ -372,7 +372,7 @@ static BOOL update_read_window_state_order(wStream* s, WINDOW_ORDER_INFO* orderI
 
 			windowState->windowRects = newRect;
 
-			if (!Stream_CheckAndLogRequiredLength(TAG, s, 8ull * windowState->numWindowRects))
+			if (!Stream_CheckAndLogRequiredLengthOfSize(TAG, s, windowState->numWindowRects, 8ull))
 				return FALSE;
 
 			/* windowRects */
@@ -416,7 +416,8 @@ static BOOL update_read_window_state_order(wStream* s, WINDOW_ORDER_INFO* orderI
 
 			windowState->visibilityRects = newRect;
 
-			if (!Stream_CheckAndLogRequiredLength(TAG, s, 8ull * windowState->numVisibilityRects))
+			if (!Stream_CheckAndLogRequiredLengthOfSize(TAG, s, windowState->numVisibilityRects,
+			                                            8ull))
 				return FALSE;
 
 			/* visibilityRects */
@@ -912,7 +913,7 @@ static BOOL update_read_desktop_actively_monitored_order(wStream* s, WINDOW_ORDE
 
 		Stream_Read_UINT8(s, monitored_desktop->numWindowIds); /* numWindowIds (1 byte) */
 
-		if (!Stream_CheckAndLogRequiredLength(TAG, s, 4ull * monitored_desktop->numWindowIds))
+		if (!Stream_CheckAndLogRequiredLengthOfSize(TAG, s, monitored_desktop->numWindowIds, 4ull))
 			return FALSE;
 
 		if (monitored_desktop->numWindowIds > 0)

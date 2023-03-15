@@ -29,6 +29,7 @@
 
 #include <freerdp/types.h>
 #include <freerdp/constants.h>
+#include <freerdp/freerdp.h>
 #include <freerdp/client/cliprdr.h>
 
 #include "../../../channels/client/addin.h"
@@ -37,7 +38,6 @@
 #include "cliprdr_format.h"
 #include "../cliprdr_common.h"
 
-#ifdef WITH_DEBUG_CLIPRDR
 static const char* CB_MSG_TYPE_STRINGS(UINT32 type)
 {
 	switch (type)
@@ -68,7 +68,6 @@ static const char* CB_MSG_TYPE_STRINGS(UINT32 type)
 			return "UNKNOWN";
 	}
 }
-#endif
 
 CliprdrClientContext* cliprdr_get_client_interface(cliprdrPlugin* cliprdr)
 {
@@ -100,10 +99,8 @@ static UINT cliprdr_packet_send(cliprdrPlugin* cliprdr, wStream* s)
 	Stream_SetPosition(s, 4);
 	Stream_Write_UINT32(s, dataLen);
 	Stream_SetPosition(s, pos);
-#ifdef WITH_DEBUG_CLIPRDR
+
 	WLog_DBG(TAG, "Cliprdr Sending (%" PRIu32 " bytes)", dataLen + 8);
-	winpr_HexDump(TAG, WLOG_DEBUG, Stream_Buffer(s), dataLen + 8);
-#endif
 
 	if (!cliprdr)
 	{
@@ -127,29 +124,27 @@ static UINT cliprdr_packet_send(cliprdrPlugin* cliprdr, wStream* s)
 	return status;
 }
 
-#ifdef WITH_DEBUG_CLIPRDR
 static void cliprdr_print_general_capability_flags(UINT32 flags)
 {
-	WLog_INFO(TAG, "generalFlags (0x%08" PRIX32 ") {", flags);
+	WLog_DBG(TAG, "generalFlags (0x%08" PRIX32 ") {", flags);
 
 	if (flags & CB_USE_LONG_FORMAT_NAMES)
-		WLog_INFO(TAG, "\tCB_USE_LONG_FORMAT_NAMES");
+		WLog_DBG(TAG, "\tCB_USE_LONG_FORMAT_NAMES");
 
 	if (flags & CB_STREAM_FILECLIP_ENABLED)
-		WLog_INFO(TAG, "\tCB_STREAM_FILECLIP_ENABLED");
+		WLog_DBG(TAG, "\tCB_STREAM_FILECLIP_ENABLED");
 
 	if (flags & CB_FILECLIP_NO_FILE_PATHS)
-		WLog_INFO(TAG, "\tCB_FILECLIP_NO_FILE_PATHS");
+		WLog_DBG(TAG, "\tCB_FILECLIP_NO_FILE_PATHS");
 
 	if (flags & CB_CAN_LOCK_CLIPDATA)
-		WLog_INFO(TAG, "\tCB_CAN_LOCK_CLIPDATA");
+		WLog_DBG(TAG, "\tCB_CAN_LOCK_CLIPDATA");
 
 	if (flags & CB_HUGE_FILE_SUPPORT_ENABLED)
-		WLog_INFO(TAG, "\tCB_HUGE_FILE_SUPPORT_ENABLED");
+		WLog_DBG(TAG, "\tCB_HUGE_FILE_SUPPORT_ENABLED");
 
-	WLog_INFO(TAG, "}");
+	WLog_DBG(TAG, "}");
 }
-#endif
 
 /**
  * Function description
@@ -179,10 +174,9 @@ static UINT cliprdr_process_general_capability(cliprdrPlugin* cliprdr, wStream* 
 
 	Stream_Read_UINT32(s, version);      /* version (4 bytes) */
 	Stream_Read_UINT32(s, generalFlags); /* generalFlags (4 bytes) */
-	DEBUG_CLIPRDR("Version: %" PRIu32 "", version);
-#ifdef WITH_DEBUG_CLIPRDR
+	WLog_DBG(TAG, "Version: %" PRIu32 "", version);
+
 	cliprdr_print_general_capability_flags(generalFlags);
-#endif
 
 	cliprdr->useLongFormatNames = (generalFlags & CB_USE_LONG_FORMAT_NAMES);
 	cliprdr->streamFileClipEnabled = (generalFlags & CB_STREAM_FILECLIP_ENABLED);
@@ -460,11 +454,8 @@ static UINT cliprdr_order_recv(LPVOID userdata, wStream* s)
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, dataLen))
 		return ERROR_INVALID_DATA;
 
-#ifdef WITH_DEBUG_CLIPRDR
 	WLog_DBG(TAG, "msgType: %s (%" PRIu16 "), msgFlags: %" PRIu16 " dataLen: %" PRIu32 "",
 	         CB_MSG_TYPE_STRINGS(msgType), msgType, msgFlags, dataLen);
-	winpr_HexDump(TAG, WLOG_DEBUG, Stream_Buffer(s), dataLen + 8);
-#endif
 
 	switch (msgType)
 	{
@@ -619,9 +610,7 @@ static UINT cliprdr_client_capabilities(CliprdrClientContext* context,
 static UINT cliprdr_temp_directory(CliprdrClientContext* context,
                                    const CLIPRDR_TEMP_DIRECTORY* tempDirectory)
 {
-	int length;
 	wStream* s;
-	WCHAR* wszTempDir = NULL;
 	cliprdrPlugin* cliprdr;
 
 	WINPR_ASSERT(context);
@@ -630,7 +619,8 @@ static UINT cliprdr_temp_directory(CliprdrClientContext* context,
 	cliprdr = (cliprdrPlugin*)context->handle;
 	WINPR_ASSERT(cliprdr);
 
-	s = cliprdr_packet_new(CB_TEMP_DIRECTORY, 0, 260 * sizeof(WCHAR));
+	const size_t tmpDirCharLen = sizeof(tempDirectory->szTempDir) / sizeof(WCHAR);
+	s = cliprdr_packet_new(CB_TEMP_DIRECTORY, 0, tmpDirCharLen * sizeof(WCHAR));
 
 	if (!s)
 	{
@@ -638,19 +628,13 @@ static UINT cliprdr_temp_directory(CliprdrClientContext* context,
 		return ERROR_INTERNAL_ERROR;
 	}
 
-	length = ConvertToUnicode(CP_UTF8, 0, tempDirectory->szTempDir, -1, &wszTempDir, 0);
-
-	if (length < 0)
+	if (Stream_Write_UTF16_String_From_UTF8(s, tmpDirCharLen - 1, tempDirectory->szTempDir,
+	                                        ARRAYSIZE(tempDirectory->szTempDir), TRUE) < 0)
 		return ERROR_INTERNAL_ERROR;
-
 	/* Path must be 260 UTF16 characters with '\0' termination.
 	 * ensure this here */
-	if (length >= 260)
-		length = 259;
+	Stream_Write_UINT16(s, 0);
 
-	Stream_Write_UTF16_String(s, wszTempDir, length);
-	Stream_Zero(s, 520 - (length * sizeof(WCHAR)));
-	free(wszTempDir);
 	WLog_Print(cliprdr->log, WLOG_DEBUG, "TempDirectory: %s", tempDirectory->szTempDir);
 	return cliprdr_packet_send(cliprdr, s);
 }
@@ -1120,7 +1104,7 @@ BOOL VCAPITYPE VirtualChannelEntryEx(PCHANNEL_ENTRY_POINTS pEntryPoints, PVOID p
 		context->rdpcontext = pEntryPointsEx->context;
 	}
 
-	cliprdr->log = WLog_Get("com.freerdp.channels.cliprdr.client");
+	cliprdr->log = WLog_Get(CHANNELS_TAG("channels.cliprdr.client"));
 	WLog_Print(cliprdr->log, WLOG_DEBUG, "VirtualChannelEntryEx");
 	CopyMemory(&(cliprdr->channelEntryPoints), pEntryPoints,
 	           sizeof(CHANNEL_ENTRY_POINTS_FREERDP_EX));

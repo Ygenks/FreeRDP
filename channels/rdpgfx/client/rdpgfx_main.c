@@ -45,32 +45,31 @@
 
 #define TAG CHANNELS_TAG("rdpgfx.client")
 
-static void free_surfaces(RdpgfxClientContext* context, wHashTable* SurfaceTable)
+static BOOL delete_surface(const void* key, void* value, void* arg)
 {
-	UINT error = 0;
-	ULONG_PTR* pKeys = NULL;
-	size_t count;
-	size_t index;
+	const UINT16 id = (UINT16)(uintptr_t)(key);
+	RdpgfxClientContext* context = arg;
+	RDPGFX_DELETE_SURFACE_PDU pdu = { 0 };
 
-	count = HashTable_GetKeys(SurfaceTable, &pKeys);
+	WINPR_UNUSED(value);
+	pdu.surfaceId = id - 1;
 
-	for (index = 0; index < count; index++)
+	if (context)
 	{
-		RDPGFX_DELETE_SURFACE_PDU pdu = { 0 };
-		pdu.surfaceId = ((UINT16)pKeys[index]) - 1;
+		UINT error = CHANNEL_RC_OK;
+		IFCALLRET(context->DeleteSurface, error, context, &pdu);
 
-		if (context)
+		if (error)
 		{
-			IFCALLRET(context->DeleteSurface, error, context, &pdu);
-
-			if (error)
-			{
-				WLog_ERR(TAG, "context->DeleteSurface failed with error %" PRIu32 "", error);
-			}
+			WLog_ERR(TAG, "context->DeleteSurface failed with error %" PRIu32 "", error);
 		}
 	}
+	return TRUE;
+}
 
-	free(pKeys);
+static void free_surfaces(RdpgfxClientContext* context, wHashTable* SurfaceTable)
+{
+	HashTable_Foreach(SurfaceTable, delete_surface, context);
 }
 
 static void evict_cache_slots(RdpgfxClientContext* context, UINT16 MaxCacheSlots, void** CacheSlots)
@@ -82,7 +81,7 @@ static void evict_cache_slots(RdpgfxClientContext* context, UINT16 MaxCacheSlots
 	{
 		if (CacheSlots[index])
 		{
-			RDPGFX_EVICT_CACHE_ENTRY_PDU pdu;
+			RDPGFX_EVICT_CACHE_ENTRY_PDU pdu = { 0 };
 			pdu.cacheSlot = (UINT16)index + 1;
 
 			if (context && context->EvictCacheEntry)
@@ -522,7 +521,7 @@ static UINT rdpgfx_recv_reset_graphics_pdu(GENERIC_CHANNEL_CALLBACK* callback, w
 	Stream_Read_UINT32(s, pdu.height);       /* height (4 bytes) */
 	Stream_Read_UINT32(s, pdu.monitorCount); /* monitorCount (4 bytes) */
 
-	if (!Stream_CheckAndLogRequiredLength(TAG, s, 20ull * pdu.monitorCount))
+	if (!Stream_CheckAndLogRequiredLengthOfSize(TAG, s, pdu.monitorCount, 20ull))
 		return ERROR_INVALID_DATA;
 
 	pdu.monitorDefArray = (MONITOR_DEF*)calloc(pdu.monitorCount, sizeof(MONITOR_DEF));
@@ -623,7 +622,7 @@ static UINT rdpgfx_recv_evict_cache_entry_pdu(GENERIC_CHANNEL_CALLBACK* callback
  *
  * @return 0 on success, otherwise a Win32 error code
  */
-UINT rdpgfx_load_cache_import_offer(RDPGFX_PLUGIN* gfx, RDPGFX_CACHE_IMPORT_OFFER_PDU* offer)
+static UINT rdpgfx_load_cache_import_offer(RDPGFX_PLUGIN* gfx, RDPGFX_CACHE_IMPORT_OFFER_PDU* offer)
 {
 	int idx, count;
 	UINT error = CHANNEL_RC_OK;
@@ -638,7 +637,7 @@ UINT rdpgfx_load_cache_import_offer(RDPGFX_PLUGIN* gfx, RDPGFX_CACHE_IMPORT_OFFE
 
 	offer->cacheEntriesCount = 0;
 
-	if (!settings->BitmapCachePersistEnabled)
+	if (!freerdp_settings_get_bool(settings, FreeRDP_BitmapCachePersistEnabled))
 		return CHANNEL_RC_OK;
 
 	if (!settings->BitmapCachePersistFile)
@@ -716,7 +715,7 @@ static UINT rdpgfx_save_persistent_cache(RDPGFX_PLUGIN* gfx)
 	WINPR_ASSERT(context);
 	WINPR_ASSERT(settings);
 
-	if (!settings->BitmapCachePersistEnabled)
+	if (!freerdp_settings_get_bool(settings, FreeRDP_BitmapCachePersistEnabled))
 		return CHANNEL_RC_OK;
 
 	if (!settings->BitmapCachePersistFile)
@@ -846,7 +845,7 @@ static UINT rdpgfx_send_cache_offer(RDPGFX_PLUGIN* gfx)
 	RdpgfxClientContext* context = gfx->context;
 	rdpSettings* settings = gfx->rdpcontext->settings;
 
-	if (!settings->BitmapCachePersistEnabled)
+	if (!freerdp_settings_get_bool(settings, FreeRDP_BitmapCachePersistEnabled))
 		return CHANNEL_RC_OK;
 
 	if (!settings->BitmapCachePersistFile)
@@ -931,7 +930,7 @@ static UINT rdpgfx_load_cache_import_reply(RDPGFX_PLUGIN* gfx, RDPGFX_CACHE_IMPO
 
 	WINPR_ASSERT(settings);
 	WINPR_ASSERT(reply);
-	if (!settings->BitmapCachePersistEnabled)
+	if (!freerdp_settings_get_bool(settings, FreeRDP_BitmapCachePersistEnabled))
 		return CHANNEL_RC_OK;
 
 	if (!settings->BitmapCachePersistFile)
@@ -1002,7 +1001,7 @@ static UINT rdpgfx_recv_cache_import_reply_pdu(GENERIC_CHANNEL_CALLBACK* callbac
 
 	Stream_Read_UINT16(s, pdu.importedEntriesCount); /* cacheSlot (2 bytes) */
 
-	if (!Stream_CheckAndLogRequiredLength(TAG, s, 2ull * pdu.importedEntriesCount))
+	if (!Stream_CheckAndLogRequiredLengthOfSize(TAG, s, pdu.importedEntriesCount, 2ull))
 		return ERROR_INVALID_DATA;
 
 	if (pdu.importedEntriesCount > RDPGFX_CACHE_ENTRY_MAX_COUNT)
@@ -1065,6 +1064,13 @@ static UINT rdpgfx_recv_create_surface_pdu(GENERIC_CHANNEL_CALLBACK* callback, w
 
 	if (context)
 	{
+		/* create surface PDU sometimes happens for surface ID that are already in use and have not
+		 * been removed yet. Ensure that there is no surface with the new ID by trying to remove it
+		 * manually.
+		 */
+		RDPGFX_DELETE_SURFACE_PDU deletePdu = { pdu.surfaceId };
+		IFCALL(context->DeleteSurface, context, &deletePdu);
+
 		IFCALLRET(context->CreateSurface, error, context, &pdu);
 
 		if (error)
@@ -1471,7 +1477,7 @@ static UINT rdpgfx_recv_solid_fill_pdu(GENERIC_CHANNEL_CALLBACK* callback, wStre
 
 	Stream_Read_UINT16(s, pdu.fillRectCount); /* fillRectCount (2 bytes) */
 
-	if (!Stream_CheckAndLogRequiredLength(TAG, s, 8ull * pdu.fillRectCount))
+	if (!Stream_CheckAndLogRequiredLengthOfSize(TAG, s, pdu.fillRectCount, 8ull))
 		return ERROR_INVALID_DATA;
 
 	pdu.fillRects = (RECTANGLE_16*)calloc(pdu.fillRectCount, sizeof(RECTANGLE_16));
@@ -1541,7 +1547,7 @@ static UINT rdpgfx_recv_surface_to_surface_pdu(GENERIC_CHANNEL_CALLBACK* callbac
 
 	Stream_Read_UINT16(s, pdu.destPtsCount); /* destPtsCount (2 bytes) */
 
-	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4ULL * pdu.destPtsCount))
+	if (!Stream_CheckAndLogRequiredLengthOfSize(TAG, s, pdu.destPtsCount, 4ull))
 		return ERROR_INVALID_DATA;
 
 	pdu.destPts = (RDPGFX_POINT16*)calloc(pdu.destPtsCount, sizeof(RDPGFX_POINT16));
@@ -1657,7 +1663,7 @@ static UINT rdpgfx_recv_cache_to_surface_pdu(GENERIC_CHANNEL_CALLBACK* callback,
 	Stream_Read_UINT16(s, pdu.surfaceId);    /* surfaceId (2 bytes) */
 	Stream_Read_UINT16(s, pdu.destPtsCount); /* destPtsCount (2 bytes) */
 
-	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4ull * pdu.destPtsCount))
+	if (!Stream_CheckAndLogRequiredLengthOfSize(TAG, s, pdu.destPtsCount, 4ull))
 		return ERROR_INVALID_DATA;
 
 	pdu.destPts = (RDPGFX_POINT16*)calloc(pdu.destPtsCount, sizeof(RDPGFX_POINT16));
@@ -2285,8 +2291,8 @@ static UINT rdpgfx_set_cache_slot_data(RdpgfxClientContext* context, UINT16 cach
 	/* Microsoft uses 1-based indexing for the egfx bitmap cache ! */
 	if (cacheSlot == 0 || cacheSlot > gfx->MaxCacheSlots)
 	{
-		WLog_ERR(TAG, "%s: invalid cache slot %" PRIu16 ", must be between 1 and %" PRIu16 "",
-		         __FUNCTION__, cacheSlot, gfx->MaxCacheSlots);
+		WLog_ERR(TAG, "invalid cache slot %" PRIu16 ", must be between 1 and %" PRIu16 "",
+		         cacheSlot, gfx->MaxCacheSlots);
 		return ERROR_INVALID_INDEX;
 	}
 
@@ -2303,8 +2309,8 @@ static void* rdpgfx_get_cache_slot_data(RdpgfxClientContext* context, UINT16 cac
 	/* Microsoft uses 1-based indexing for the egfx bitmap cache ! */
 	if (cacheSlot == 0 || cacheSlot > gfx->MaxCacheSlots)
 	{
-		WLog_ERR(TAG, "%s: invalid cache slot %" PRIu16 ", must be between 1 and %" PRIu16 "",
-		         __FUNCTION__, cacheSlot, gfx->MaxCacheSlots);
+		WLog_ERR(TAG, "invalid cache slot %" PRIu16 ", must be between 1 and %" PRIu16 "",
+		         cacheSlot, gfx->MaxCacheSlots);
 		return NULL;
 	}
 
@@ -2319,6 +2325,7 @@ static UINT init_plugin_cb(GENERIC_DYNVC_PLUGIN* base, rdpContext* rcontext, rdp
 
 	WINPR_ASSERT(base);
 	gfx->rdpcontext = rcontext;
+	gfx->log = WLog_Get(TAG);
 
 	gfx->SurfaceTable = HashTable_New(TRUE);
 	if (!gfx->SurfaceTable)

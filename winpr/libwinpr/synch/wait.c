@@ -20,7 +20,7 @@
 
 #include <winpr/config.h>
 
-#ifdef HAVE_UNISTD_H
+#ifdef WINPR_HAVE_UNISTD_H
 #include <unistd.h>
 #endif
 
@@ -118,7 +118,7 @@ int _mach_safe_clock_gettime(int clk_id, struct timespec* t)
  * http://code.google.com/p/android/issues/detail?id=7807
  * http://aleksmaus.blogspot.ca/2011/12/missing-pthreadmutextimedlock-on.html
  */
-#if !defined(HAVE_PTHREAD_MUTEX_TIMEDLOCK)
+#if !defined(WINPR_HAVE_PTHREAD_MUTEX_TIMEDLOCK)
 #include <pthread.h>
 
 static long long ts_difftime(const struct timespec* o, const struct timespec* n)
@@ -263,18 +263,20 @@ DWORD WaitForSingleObjectEx(HANDLE hHandle, DWORD dwMilliseconds, BOOL bAlertabl
 		if (bAlertable)
 		{
 			thread = (WINPR_THREAD*)_GetCurrentThread();
-			if (!thread)
+			if (thread)
 			{
-				WLog_ERR(TAG, "failed to retrieve currentThread");
-				return WAIT_FAILED;
+				/* treat reentrancy, we can't switch to alertable state when we're already
+				   treating completions */
+				if (thread->apc.treatingCompletions)
+					bAlertable = FALSE;
+				else
+					extraFds = thread->apc.length;
 			}
-
-			/* treat reentrancy, we can't switch to alertable state when we're already
-			   treating completions */
-			if (thread->apc.treatingCompletions)
-				bAlertable = FALSE;
 			else
-				extraFds = thread->apc.length;
+			{
+				/* called from a non WinPR thread */
+				bAlertable = FALSE;
+			}
 		}
 
 		int fd = winpr_Handle_getFd(Object);
@@ -365,15 +367,20 @@ DWORD WaitForMultipleObjectsEx(DWORD nCount, const HANDLE* lpHandles, BOOL bWait
 	if (bAlertable)
 	{
 		thread = winpr_GetCurrentThread();
-		if (!thread)
-			return WAIT_FAILED;
-
-		/* treat reentrancy, we can't switch to alertable state when we're already
-		   treating completions */
-		if (thread->apc.treatingCompletions)
-			bAlertable = FALSE;
+		if (thread)
+		{
+			/* treat reentrancy, we can't switch to alertable state when we're already
+			   treating completions */
+			if (thread->apc.treatingCompletions)
+				bAlertable = FALSE;
+			else
+				extraFds = thread->apc.length;
+		}
 		else
-			extraFds = thread->apc.length;
+		{
+			/* most probably we're not called from WinPR thread, so we can't have any APC */
+			bAlertable = FALSE;
+		}
 	}
 
 	if (!pollset_init(&pollset, nCount + extraFds))
@@ -458,7 +465,7 @@ DWORD WaitForMultipleObjectsEx(DWORD nCount, const HANDLE* lpHandles, BOOL bWait
 			status = pollset_poll(&pollset, waitTime);
 			if (status < 0)
 			{
-#ifdef HAVE_POLL_H
+#ifdef WINPR_HAVE_POLL_H
 				WLog_ERR(TAG, "poll() handle %" PRIu32 " (%" PRIu32 ") failure [%d] %s", index,
 				         nCount, errno, strerror(errno));
 #else

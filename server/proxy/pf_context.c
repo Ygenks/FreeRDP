@@ -29,6 +29,8 @@
 
 #include "pf_client.h"
 #include "pf_utils.h"
+#include "proxy_modules.h"
+
 #include <freerdp/server/proxy/proxy_context.h>
 
 #include "channels/pf_channel_rdpdr.h"
@@ -56,7 +58,7 @@ pServerStaticChannelContext* StaticChannelContext_new(pServerContext* ps, const 
 		return NULL;
 	}
 
-	ret->channel_id = id;
+	ret->front_channel_id = id;
 	ret->channel_name = _strdup(name);
 	if (!ret->channel_name)
 	{
@@ -65,7 +67,14 @@ pServerStaticChannelContext* StaticChannelContext_new(pServerContext* ps, const 
 		return NULL;
 	}
 
-	ret->channelMode = pf_utils_get_channel_mode(ps->pdata->config, name);
+	proxyChannelToInterceptData channel = { .name = name, .channelId = id, .intercept = FALSE };
+
+	if (pf_modules_run_filter(ps->pdata->module, FILTER_TYPE_STATIC_INTERCEPT_LIST, ps->pdata,
+	                          &channel) &&
+	    channel.intercept)
+		ret->channelMode = PF_UTILS_CHANNEL_INTERCEPT;
+	else
+		ret->channelMode = pf_utils_get_channel_mode(ps->pdata->config, name);
 	return ret;
 }
 
@@ -110,17 +119,27 @@ static BOOL client_to_proxy_context_new(freerdp_peer* client, rdpContext* ctx)
 	obj->fnObjectFree = intercept_context_entry_free;
 
 	/* channels by ids */
-	context->channelsById = HashTable_New(FALSE);
-	if (!context->channelsById)
+	context->channelsByFrontId = HashTable_New(FALSE);
+	if (!context->channelsByFrontId)
 		goto error;
-	if (!HashTable_SetHashFunction(context->channelsById, ChannelId_Hash))
+	if (!HashTable_SetHashFunction(context->channelsByFrontId, ChannelId_Hash))
 		goto error;
 
-	obj = HashTable_KeyObject(context->channelsById);
+	obj = HashTable_KeyObject(context->channelsByFrontId);
 	obj->fnObjectEquals = (OBJECT_EQUALS_FN)ChannelId_Compare;
 
-	obj = HashTable_ValueObject(context->channelsById);
+	obj = HashTable_ValueObject(context->channelsByFrontId);
 	obj->fnObjectFree = (OBJECT_FREE_FN)StaticChannelContext_free;
+
+	context->channelsByBackId = HashTable_New(FALSE);
+	if (!context->channelsByBackId)
+		goto error;
+	if (!HashTable_SetHashFunction(context->channelsByBackId, ChannelId_Hash))
+		goto error;
+
+	obj = HashTable_KeyObject(context->channelsByBackId);
+	obj->fnObjectEquals = (OBJECT_EQUALS_FN)ChannelId_Compare;
+
 	return TRUE;
 
 error:
@@ -146,7 +165,8 @@ void client_to_proxy_context_free(freerdp_peer* client, rdpContext* ctx)
 	}
 
 	HashTable_Free(context->interceptContextMap);
-	HashTable_Free(context->channelsById);
+	HashTable_Free(context->channelsByFrontId);
+	HashTable_Free(context->channelsByBackId);
 
 	if (context->vcm && (context->vcm != INVALID_HANDLE_VALUE))
 		WTSCloseServer((HANDLE)context->vcm);
@@ -197,9 +217,7 @@ BOOL pf_context_copy_settings(rdpSettings* dst, const rdpSettings* src)
 {
 	BOOL rc = FALSE;
 	rdpSettings* before_copy;
-	const size_t to_revert[] = { FreeRDP_ConfigPath,      FreeRDP_PrivateKeyContent,
-		                         FreeRDP_PrivateKeyFile,  FreeRDP_CertificateFile,
-		                         FreeRDP_CertificateName, FreeRDP_CertificateContent };
+	const size_t to_revert[] = { FreeRDP_ConfigPath, FreeRDP_CertificateName };
 
 	if (!dst || !src)
 		return FALSE;
@@ -243,7 +261,7 @@ out_fail:
 	return rc;
 }
 
-pClientContext* pf_context_create_client_context(rdpSettings* clientSettings)
+pClientContext* pf_context_create_client_context(const rdpSettings* clientSettings)
 {
 	RDP_CLIENT_ENTRY_POINTS clientEntryPoints;
 	pClientContext* pc;

@@ -219,6 +219,11 @@ if(FAAC_FOUND)
     include_directories(${FAAC_INCLUDE_DIRS})
 endif()
 
+if(WITH_CJSON)
+    freerdp_library_add(${CJSON_LIBRARIES})
+    include_directories(${CJSON_INCLUDE_DIRS})
+endif()
+
 if(WITH_NEON)
     check_symbol_exists("_M_AMD64"     ""  MSVC_ARM64)
     check_symbol_exists("__aarch64__"  ""  ARCH_ARM64)
@@ -284,28 +289,30 @@ set(PRIMITIVES_SRCS
     primitives/primitives.c
     primitives/prim_internal.h)
 
-set(PRIMITIVES_SSE2_SRCS
-    primitives/prim_colors_opt.c
-    primitives/prim_set_opt.c)
+if (WITH_SSE2 OR WITH_NEON)
+    set(PRIMITIVES_SSE2_SRCS
+        primitives/prim_colors_opt.c
+        primitives/prim_set_opt.c)
 
-set(PRIMITIVES_SSE3_SRCS
-    primitives/prim_add_opt.c
-    primitives/prim_alphaComp_opt.c
-    primitives/prim_andor_opt.c
-    primitives/prim_shift_opt.c)
+    set(PRIMITIVES_SSE3_SRCS
+        primitives/prim_add_opt.c
+        primitives/prim_alphaComp_opt.c
+        primitives/prim_andor_opt.c
+        primitives/prim_shift_opt.c)
 
-set(PRIMITIVES_SSSE3_SRCS
-    primitives/prim_sign_opt.c
-    primitives/prim_YCoCg_opt.c)
+    set(PRIMITIVES_SSSE3_SRCS
+        primitives/prim_sign_opt.c
+        primitives/prim_YCoCg_opt.c)
 
-if (WITH_SSE2)
-    set(PRIMITIVES_SSSE3_SRCS ${PRIMITIVES_SSSE3_SRCS}
-        primitives/prim_YUV_ssse3.c)
-endif()
+    if (WITH_SSE2)
+        set(PRIMITIVES_SSSE3_SRCS ${PRIMITIVES_SSSE3_SRCS}
+            primitives/prim_YUV_ssse3.c)
+    endif()
 
-if (WITH_NEON)
-    set(PRIMITIVES_SSSE3_SRCS ${PRIMITIVES_SSSE3_SRCS}
-        primitives/prim_YUV_neon.c)
+    if (WITH_NEON)
+        set(PRIMITIVES_SSSE3_SRCS ${PRIMITIVES_SSSE3_SRCS}
+            primitives/prim_YUV_neon.c)
+    endif()
 endif()
 
 if (WITH_OPENCL)

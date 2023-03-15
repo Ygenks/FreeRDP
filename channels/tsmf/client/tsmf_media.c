@@ -27,10 +27,6 @@
 #include <string.h>
 #include <signal.h>
 
-#ifdef HAVE_UNISTD_H
-#include <unistd.h>
-#endif
-
 #ifndef _WIN32
 #include <sys/time.h>
 #endif
@@ -42,6 +38,7 @@
 #include <winpr/stream.h>
 #include <winpr/collections.h>
 
+#include <freerdp/freerdp.h>
 #include <freerdp/client/tsmf.h>
 
 #include "tsmf_constants.h"
@@ -691,7 +688,6 @@ static BOOL tsmf_sample_playback(TSMF_SAMPLE* sample)
 	}
 	else
 	{
-		TSMF_STREAM* stream = sample->stream;
 		UINT64 ack_anticipation_time = get_current_time();
 		BOOL buffer_filled = TRUE;
 

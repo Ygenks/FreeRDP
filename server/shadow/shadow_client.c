@@ -152,6 +152,32 @@ static INLINE void shadow_client_free_queued_message(void* obj)
 	}
 }
 
+static void shadow_client_context_free(freerdp_peer* peer, rdpContext* context)
+{
+	rdpShadowClient* client = (rdpShadowClient*)context;
+	rdpShadowServer* server;
+
+	WINPR_UNUSED(peer);
+	if (!client)
+		return;
+
+	server = client->server;
+	if (server && server->clients)
+		ArrayList_Remove(server->clients, (void*)client);
+
+	shadow_encoder_free(client->encoder);
+
+	/* Clear queued messages and free resource */
+	MessageQueue_Free(client->MsgQueue);
+	WTSCloseServer((HANDLE)client->vcm);
+	region16_uninit(&(client->invalidRegion));
+	DeleteCriticalSection(&(client->lock));
+
+	client->MsgQueue = NULL;
+	client->encoder = NULL;
+	client->vcm = NULL;
+}
+
 static BOOL shadow_client_context_new(freerdp_peer* peer, rdpContext* context)
 {
 	BOOL NSCodec;
@@ -194,13 +220,7 @@ static BOOL shadow_client_context_new(freerdp_peer* peer, rdpContext* context)
 	settings->DrawAllowSkipAlpha = TRUE;
 	settings->DrawAllowColorSubsampling = TRUE;
 	settings->DrawAllowDynamicColorFidelity = TRUE;
-	settings->CompressionLevel = PACKET_COMPR_TYPE_RDP6;
-
-	if (!freerdp_settings_set_string(settings, FreeRDP_CertificateFile, server->CertificateFile))
-		goto fail_cert_file;
-
-	if (!freerdp_settings_set_string(settings, FreeRDP_PrivateKeyFile, server->PrivateKeyFile))
-		goto fail_privkey_file;
+	settings->CompressionLevel = PACKET_COMPR_TYPE_RDP8;
 
 	if (server->ipcSocket && (strncmp(bind_address, server->ipcSocket,
 	                                  strnlen(bind_address, sizeof(bind_address))) != 0))
@@ -214,68 +234,28 @@ static BOOL shadow_client_context_new(freerdp_peer* peer, rdpContext* context)
 	client->mayInteract = server->mayInteract;
 
 	if (!InitializeCriticalSectionAndSpinCount(&(client->lock), 4000))
-		goto fail_client_lock;
+		goto fail;
 
 	region16_init(&(client->invalidRegion));
-	client->vcm = WTSOpenServerA((LPSTR)peer->context);
+	client->vcm = WTSOpenServerA(peer->context);
 
 	if (!client->vcm || client->vcm == INVALID_HANDLE_VALUE)
-		goto fail_open_server;
+		goto fail;
 
 	if (!(client->MsgQueue = MessageQueue_New(&cb)))
-		goto fail_message_queue;
+		goto fail;
 
 	if (!(client->encoder = shadow_encoder_new(client)))
-		goto fail_encoder_new;
+		goto fail;
 
-	if (ArrayList_Append(server->clients, (void*)client))
-		return TRUE;
+	if (!ArrayList_Append(server->clients, (void*)client))
+		goto fail;
 
-	shadow_encoder_free(client->encoder);
-	client->encoder = NULL;
-fail_encoder_new:
-	MessageQueue_Free(client->MsgQueue);
-	client->MsgQueue = NULL;
-fail_message_queue:
-	WTSCloseServer((HANDLE)client->vcm);
-	client->vcm = NULL;
-fail_open_server:
-	DeleteCriticalSection(&(client->lock));
-fail_client_lock:
-	freerdp_settings_set_string(settings, FreeRDP_PrivateKeyFile, NULL);
-fail_privkey_file:
-	freerdp_settings_set_string(settings, FreeRDP_CertificateFile, NULL);
-fail_cert_file:
+	return TRUE;
+
+fail:
+	shadow_client_context_free(peer, context);
 	return FALSE;
-}
-
-static void shadow_client_context_free(freerdp_peer* peer, rdpContext* context)
-{
-	rdpShadowClient* client = (rdpShadowClient*)context;
-	rdpShadowServer* server;
-
-	WINPR_ASSERT(context);
-	WINPR_UNUSED(peer);
-	server = client->server;
-	WINPR_ASSERT(server);
-
-	WINPR_ASSERT(server->clients);
-	ArrayList_Remove(server->clients, (void*)client);
-
-	if (client->encoder)
-	{
-		shadow_encoder_free(client->encoder);
-		client->encoder = NULL;
-	}
-
-	/* Clear queued messages and free resource */
-	WINPR_ASSERT(client->MsgQueue);
-	MessageQueue_Clear(client->MsgQueue);
-	MessageQueue_Free(client->MsgQueue);
-	WTSCloseServer((HANDLE)client->vcm);
-	client->vcm = NULL;
-	region16_uninit(&(client->invalidRegion));
-	DeleteCriticalSection(&(client->lock));
 }
 
 static INLINE void shadow_client_mark_invalid(rdpShadowClient* client, UINT32 numRects,
@@ -382,6 +362,65 @@ static BOOL shadow_client_capabilities(freerdp_peer* peer)
 	return ret;
 }
 
+static void shadow_reset_desktop_resize(rdpShadowClient* client)
+{
+	WINPR_ASSERT(client);
+	client->resizeRequested = FALSE;
+}
+
+static BOOL shadow_send_desktop_resize(rdpShadowClient* client)
+{
+	BOOL rc;
+	rdpUpdate* update;
+	rdpSettings* settings;
+	const freerdp_peer* peer;
+
+	WINPR_ASSERT(client);
+
+	settings = client->context.settings;
+	peer = client->context.peer;
+	WINPR_ASSERT(peer);
+	WINPR_ASSERT(client->server);
+	WINPR_ASSERT(client->server->surface);
+
+	const UINT32 resizeWidth = client->server->surface->width;
+	const UINT32 resizeHeight = client->server->surface->height;
+
+	if (client->resizeRequested)
+	{
+		if ((resizeWidth == client->resizeWidth) && (resizeHeight == client->resizeHeight))
+		{
+			const UINT32 w = freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth);
+			const UINT32 h = freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight);
+			WLog_WARN(TAG,
+			          "detected previous resize request for resolution %" PRIu32 "x%" PRIu32
+			          ", still have %" PRIu32 "x%" PRIu32 ", disconnecting peer",
+			          resizeWidth, resizeHeight, w, h);
+			return FALSE;
+		}
+	}
+
+	update = client->context.update;
+	WINPR_ASSERT(update);
+	WINPR_ASSERT(update->DesktopResize);
+
+	// Update peer resolution, required so that during disconnect/reconnect the correct resolution
+	// is sent to the client.
+	if (!freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, resizeWidth))
+		return FALSE;
+	if (!freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, resizeHeight))
+		return FALSE;
+	rc = update->DesktopResize(update->context);
+	WLog_INFO(TAG, "Client %s resize requested (%" PRIu32 "x%" PRIu32 "@%" PRIu32 ")",
+	          peer->hostname, resizeWidth, resizeHeight,
+	          freerdp_settings_get_uint32(settings, FreeRDP_ColorDepth));
+	client->resizeRequested = TRUE;
+	client->resizeWidth = resizeWidth;
+	client->resizeHeight = resizeHeight;
+
+	return rc;
+}
+
 static BOOL shadow_client_post_connect(freerdp_peer* peer)
 {
 	int authStatus;
@@ -421,21 +460,6 @@ static BOOL shadow_client_post_connect(freerdp_peer* peer)
 	WLog_INFO(TAG, "Client from %s is activated (%" PRIu32 "x%" PRIu32 "@%" PRIu32 ")",
 	          peer->hostname, settings->DesktopWidth, settings->DesktopHeight,
 	          freerdp_settings_get_uint32(settings, FreeRDP_ColorDepth));
-
-	/* Resize client if necessary */
-	if (shadow_client_recalc_desktop_size(client))
-	{
-		BOOL rc;
-		rdpUpdate* update = peer->context->update;
-		WINPR_ASSERT(update);
-		WINPR_ASSERT(update->DesktopResize);
-
-		rc = update->DesktopResize(update->context);
-		WLog_INFO(TAG, "Client from %s is resized (%" PRIu32 "x%" PRIu32 "@%" PRIu32 ")",
-		          peer->hostname, settings->DesktopWidth, settings->DesktopHeight,
-		          freerdp_settings_get_uint32(settings, FreeRDP_ColorDepth));
-		return FALSE;
-	}
 
 	if (shadow_client_channels_post_connect(client) != CHANNEL_RC_OK)
 		return FALSE;
@@ -591,6 +615,11 @@ static BOOL shadow_client_activate(freerdp_peer* peer)
 	settings = peer->context->settings;
 	WINPR_ASSERT(settings);
 
+	/* Resize client if necessary */
+	if (shadow_client_recalc_desktop_size(client))
+		return shadow_send_desktop_resize(client);
+
+	shadow_reset_desktop_resize(client);
 	client->activated = TRUE;
 	client->inLobby = client->mayView ? FALSE : TRUE;
 
@@ -626,31 +655,13 @@ static BOOL shadow_client_logon(freerdp_peer* peer, const SEC_WINNT_AUTH_IDENTIT
 	if (identity->Flags & SEC_WINNT_AUTH_IDENTITY_UNICODE)
 	{
 		if (identity->User)
-		{
-			int r;
-			WINPR_ASSERT(identity->UserLength <= INT_MAX);
-			r = ConvertFromUnicode(CP_UTF8, 0, identity->User, (int)identity->UserLength, &user, 0,
-			                       NULL, NULL);
-			WINPR_ASSERT(r > 0);
-		}
+			user = ConvertWCharNToUtf8Alloc(identity->User, identity->UserLength, NULL);
 
 		if (identity->Domain)
-		{
-			int r;
-			WINPR_ASSERT(identity->DomainLength <= INT_MAX);
-			r = ConvertFromUnicode(CP_UTF8, 0, identity->Domain, (int)identity->DomainLength,
-			                       &domain, 0, NULL, NULL);
-			WINPR_ASSERT(r > 0);
-		}
+			domain = ConvertWCharNToUtf8Alloc(identity->Domain, identity->DomainLength, NULL);
 
 		if (identity->Password)
-		{
-			int r;
-			WINPR_ASSERT(identity->PasswordLength <= INT_MAX);
-			r = ConvertFromUnicode(CP_UTF8, 0, identity->Password, (int)identity->PasswordLength,
-			                       &password, 0, NULL, NULL);
-			WINPR_ASSERT(r > 0);
-		}
+			password = ConvertWCharNToUtf8Alloc(identity->Password, identity->PasswordLength, NULL);
 	}
 	else
 	{
@@ -1042,6 +1053,7 @@ static BOOL shadow_client_send_surface_gfx(rdpShadowClient* client, const BYTE* 
 	cmd.height = nHeight;
 
 	id = freerdp_settings_get_uint32(settings, FreeRDP_RemoteFxCodecId);
+#ifdef WITH_GFX_H264
 	if (settings->GfxAVC444 || settings->GfxAVC444v2)
 	{
 		INT32 rc;
@@ -1137,7 +1149,9 @@ static BOOL shadow_client_send_surface_gfx(rdpShadowClient* client, const BYTE* 
 			return FALSE;
 		}
 	}
-	else if (freerdp_settings_get_bool(settings, FreeRDP_RemoteFxCodec) && (id != 0))
+	else
+#endif
+	    if (freerdp_settings_get_bool(settings, FreeRDP_RemoteFxCodec) && (id != 0))
 	{
 		BOOL rc;
 		wStream* s;
@@ -1778,31 +1792,38 @@ static BOOL shadow_client_send_surface_update(rdpShadowClient* client, SHADOW_GF
 	// PRId64 " height: %" PRId64 " right: %" PRId64 " bottom: %" PRId64, 	nXSrc, nYSrc, nWidth,
 	// nHeight, nXSrc + nWidth, nYSrc + nHeight);
 
-	if (settings->SupportGraphicsPipeline && pStatus->gfxOpened)
+	if (settings->SupportGraphicsPipeline)
 	{
-		/* GFX/h264 always full screen encoded */
-		nWidth = settings->DesktopWidth;
-		nHeight = settings->DesktopHeight;
-
-		/* Create primary surface if have not */
-		if (!pStatus->gfxSurfaceCreated)
+		if (pStatus->gfxOpened)
 		{
-			/* Only init surface when we have h264 supported */
-			if (!(ret = shadow_client_rdpgfx_reset_graphic(client)))
-				goto out;
+			/* GFX/h264 always full screen encoded */
+			nWidth = settings->DesktopWidth;
+			nHeight = settings->DesktopHeight;
 
-			if (!(ret = shadow_client_rdpgfx_new_surface(client)))
-				goto out;
+			/* Create primary surface if have not */
+			if (!pStatus->gfxSurfaceCreated)
+			{
+				/* Only init surface when we have h264 supported */
+				if (!(ret = shadow_client_rdpgfx_reset_graphic(client)))
+					goto out;
 
-			pStatus->gfxSurfaceCreated = TRUE;
+				if (!(ret = shadow_client_rdpgfx_new_surface(client)))
+					goto out;
+
+				pStatus->gfxSurfaceCreated = TRUE;
+			}
+
+			WINPR_ASSERT(nWidth >= 0);
+			WINPR_ASSERT(nWidth <= UINT16_MAX);
+			WINPR_ASSERT(nHeight >= 0);
+			WINPR_ASSERT(nHeight <= UINT16_MAX);
+			ret = shadow_client_send_surface_gfx(client, pSrcData, nSrcStep, SrcFormat, 0, 0,
+			                                     (UINT16)nWidth, (UINT16)nHeight);
 		}
-
-		WINPR_ASSERT(nWidth >= 0);
-		WINPR_ASSERT(nWidth <= UINT16_MAX);
-		WINPR_ASSERT(nHeight >= 0);
-		WINPR_ASSERT(nHeight <= UINT16_MAX);
-		ret = shadow_client_send_surface_gfx(client, pSrcData, nSrcStep, SrcFormat, 0, 0,
-		                                     (UINT16)nWidth, (UINT16)nHeight);
+		else
+		{
+			ret = TRUE;
+		}
 	}
 	else if (settings->RemoteFxCodec || freerdp_settings_get_bool(settings, FreeRDP_NSCodec))
 	{
@@ -1876,22 +1897,14 @@ static BOOL shadow_client_send_resize(rdpShadowClient* client, SHADOW_GFX_STATUS
 	}
 
 	/* Send Resize */
-	WINPR_ASSERT(peer->context);
-	WINPR_ASSERT(peer->context->update);
-	WINPR_ASSERT(peer->context->update->DesktopResize);
-	if (!peer->context->update->DesktopResize(peer->context->update->context))
-	{
-		WLog_ERR(TAG, "DesktopResize failed");
+	if (!shadow_send_desktop_resize(client))
 		return FALSE;
-	}
+	shadow_reset_desktop_resize(client);
 
 	/* Clear my invalidRegion. shadow_client_activate refreshes fullscreen */
 	EnterCriticalSection(&(client->lock));
 	region16_clear(&(client->invalidRegion));
 	LeaveCriticalSection(&(client->lock));
-	WLog_INFO(TAG, "Client from %s is resized (%" PRIu32 "x%" PRIu32 "@%" PRIu32 ")",
-	          peer->hostname, settings->DesktopWidth, settings->DesktopHeight,
-	          freerdp_settings_get_uint32(settings, FreeRDP_ColorDepth));
 	return TRUE;
 }
 
@@ -2089,7 +2102,8 @@ static DWORD WINAPI shadow_client_thread(LPVOID arg)
 	shadow_input_register_callbacks(peer->context->input);
 
 	rc = peer->Initialize(peer);
-	WINPR_ASSERT(rc);
+	if (!rc)
+		goto out;
 
 	update = peer->context->update;
 	WINPR_ASSERT(update);
@@ -2216,6 +2230,7 @@ static DWORD WINAPI shadow_client_thread(LPVOID arg)
 					break;
 
 				case DRDYNVC_STATE_READY:
+#if defined(CHANNEL_AUDIN_SERVER)
 					if (client->audin && !IFCALLRESULT(TRUE, client->audin->IsOpen, client->audin))
 					{
 						if (!IFCALLRESULT(FALSE, client->audin->Open, client->audin))
@@ -2224,6 +2239,7 @@ static DWORD WINAPI shadow_client_thread(LPVOID arg)
 							goto fail;
 						}
 					}
+#endif
 
 					/* Init RDPGFX dynamic channel */
 					if (settings->SupportGraphicsPipeline && client->rdpgfx && !gfxstatus.gfxOpened)
@@ -2334,6 +2350,7 @@ static DWORD WINAPI shadow_client_thread(LPVOID arg)
 fail:
 
 	/* Free channels early because we establish channels in post connect */
+#if defined(CHANNEL_AUDIN_SERVER)
 	if (client->audin && !IFCALLRESULT(TRUE, client->audin->IsOpen, client->audin))
 	{
 		if (!IFCALLRESULT(FALSE, client->audin->Close, client->audin))
@@ -2341,6 +2358,7 @@ fail:
 			WLog_WARN(TAG, "AUDIN shutdown failure!");
 		}
 	}
+#endif
 
 	if (gfxstatus.gfxOpened)
 	{

@@ -41,8 +41,10 @@
 #include <freerdp/channels/channels.h>
 #include <freerdp/channels/drdynvc.h>
 
+#include <freerdp/freerdp.h>
 #include <freerdp/constants.h>
 #include <freerdp/server/rdpsnd.h>
+#include <freerdp/settings.h>
 
 #include "sf_ainput.h"
 #include "sf_audin.h"
@@ -585,10 +587,21 @@ static DWORD WINAPI tf_debug_channel_thread_func(LPVOID arg)
 
 	while (1)
 	{
-		WaitForSingleObject(context->event, INFINITE);
+		DWORD status;
+		DWORD nCount = 0;
+		HANDLE handles[MAXIMUM_WAIT_OBJECTS] = { 0 };
 
-		if (WaitForSingleObject(context->stopEvent, 0) == WAIT_OBJECT_0)
-			break;
+		handles[nCount++] = context->event;
+		handles[nCount++] = freerdp_abort_event(&context->_p);
+		handles[nCount++] = context->stopEvent;
+		status = WaitForMultipleObjects(nCount, handles, FALSE, INFINITE);
+		switch (status)
+		{
+			case WAIT_OBJECT_0:
+				break;
+			default:
+				goto fail;
+		}
 
 		Stream_SetPosition(s, 0);
 
@@ -611,7 +624,7 @@ static DWORD WINAPI tf_debug_channel_thread_func(LPVOID arg)
 		Stream_SetPosition(s, BytesReturned);
 		WLog_DBG(TAG, "got %" PRIu32 " bytes", BytesReturned);
 	}
-
+fail:
 	Stream_Free(s, TRUE);
 	return 0;
 }
@@ -790,7 +803,7 @@ static BOOL tf_peer_keyboard_event(rdpInput* input, UINT16 flags, UINT8 code)
 	WLog_DBG(TAG, "Client sent a keyboard event (flags:0x%04" PRIX16 " code:0x%04" PRIX8 ")", flags,
 	         code);
 
-	if ((flags & KBD_FLAGS_DOWN) && (code == RDP_SCANCODE_KEY_G)) /* 'g' key */
+	if (((flags & KBD_FLAGS_RELEASE) == 0) && (code == RDP_SCANCODE_KEY_G)) /* 'g' key */
 	{
 		if (settings->DesktopWidth != 800)
 		{
@@ -811,7 +824,7 @@ static BOOL tf_peer_keyboard_event(rdpInput* input, UINT16 flags, UINT8 code)
 		update->DesktopResize(update->context);
 		tcontext->activated = FALSE;
 	}
-	else if ((flags & KBD_FLAGS_DOWN) && code == RDP_SCANCODE_KEY_C) /* 'c' key */
+	else if (((flags & KBD_FLAGS_RELEASE) == 0) && code == RDP_SCANCODE_KEY_C) /* 'c' key */
 	{
 		if (tcontext->debug_channel)
 		{
@@ -819,22 +832,22 @@ static BOOL tf_peer_keyboard_event(rdpInput* input, UINT16 flags, UINT8 code)
 			WTSVirtualChannelWrite(tcontext->debug_channel, (PCHAR) "test2", 5, &written);
 		}
 	}
-	else if ((flags & KBD_FLAGS_DOWN) && code == RDP_SCANCODE_KEY_X) /* 'x' key */
+	else if (((flags & KBD_FLAGS_RELEASE) == 0) && code == RDP_SCANCODE_KEY_X) /* 'x' key */
 	{
 		WINPR_ASSERT(client->Close);
 		client->Close(client);
 	}
-	else if ((flags & KBD_FLAGS_DOWN) && code == RDP_SCANCODE_KEY_R) /* 'r' key */
+	else if (((flags & KBD_FLAGS_RELEASE) == 0) && code == RDP_SCANCODE_KEY_R) /* 'r' key */
 	{
 		tcontext->audin_open = !tcontext->audin_open;
 	}
 #if defined(CHANNEL_AINPUT_SERVER)
-	else if ((flags & KBD_FLAGS_DOWN) && code == RDP_SCANCODE_KEY_I) /* 'i' key */
+	else if (((flags & KBD_FLAGS_RELEASE) == 0) && code == RDP_SCANCODE_KEY_I) /* 'i' key */
 	{
 		tcontext->ainput_open = !tcontext->ainput_open;
 	}
 #endif
-	else if ((flags & KBD_FLAGS_DOWN) && code == RDP_SCANCODE_KEY_S) /* 's' key */
+	else if (((flags & KBD_FLAGS_RELEASE) == 0) && code == RDP_SCANCODE_KEY_S) /* 's' key */
 	{
 	}
 
@@ -983,18 +996,15 @@ static DWORD WINAPI test_peer_mainloop(LPVOID arg)
 {
 	BOOL rc;
 	DWORD error = CHANNEL_RC_OK;
-	HANDLE handles[32] = { 0 };
-	DWORD count;
-	DWORD status;
-	testPeerContext* context;
+	HANDLE handles[MAXIMUM_WAIT_OBJECTS] = { 0 };
+	DWORD count = 0;
+	DWORD status = 0;
+	testPeerContext* context = NULL;
 	struct server_info* info;
 	rdpSettings* settings;
 	rdpInput* input;
 	rdpUpdate* update;
 	freerdp_peer* client = (freerdp_peer*)arg;
-
-	const char* key = "server.key";
-	const char* cert = "server.crt";
 
 	WINPR_ASSERT(client);
 
@@ -1007,11 +1017,6 @@ static DWORD WINAPI test_peer_mainloop(LPVOID arg)
 		return 0;
 	}
 
-	if (info->key)
-		key = info->key;
-	if (info->cert)
-		cert = info->cert;
-
 	/* Initialize the real server settings here */
 	WINPR_ASSERT(client->context);
 	settings = client->context->settings;
@@ -1020,18 +1025,19 @@ static DWORD WINAPI test_peer_mainloop(LPVOID arg)
 	{
 		if (!freerdp_settings_set_bool(settings, FreeRDP_TransportDumpReplay, TRUE) ||
 		    !freerdp_settings_set_string(settings, FreeRDP_TransportDumpFile, info->replay_dump))
-		{
-			freerdp_peer_free(client);
-			return 0;
-		}
+			goto fail;
 	}
-	if (!freerdp_settings_set_string(settings, FreeRDP_CertificateFile, cert) ||
-	    !freerdp_settings_set_string(settings, FreeRDP_PrivateKeyFile, key))
-	{
-		WLog_ERR(TAG, "Memory allocation failed (strdup)");
-		freerdp_peer_free(client);
-		return 0;
-	}
+
+	rdpPrivateKey* key = freerdp_key_new_from_file(info->key);
+	if (!key)
+		goto fail;
+	if (!freerdp_settings_set_pointer_len(settings, FreeRDP_RdpServerRsaKey, key, 1))
+		goto fail;
+	rdpCertificate* cert = freerdp_certificate_new_from_file(info->cert);
+	if (!cert)
+		goto fail;
+	if (!freerdp_settings_set_pointer_len(settings, FreeRDP_RdpServerCertificate, cert, 1))
+		goto fail;
 
 	settings->RdpSecurity = TRUE;
 	settings->TlsSecurity = TRUE;
@@ -1043,7 +1049,8 @@ static DWORD WINAPI test_peer_mainloop(LPVOID arg)
 	settings->RemoteFxCodec = TRUE;
 	if (!freerdp_settings_set_bool(settings, FreeRDP_NSCodec, TRUE) ||
 	    !freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32))
-		return FALSE;
+		goto fail;
+
 	settings->SuppressOutput = TRUE;
 	settings->RefreshRect = TRUE;
 
@@ -1069,7 +1076,8 @@ static DWORD WINAPI test_peer_mainloop(LPVOID arg)
 
 	WINPR_ASSERT(client->Initialize);
 	rc = client->Initialize(client);
-	WINPR_ASSERT(rc);
+	if (!rc)
+		goto fail;
 
 	context = (testPeerContext*)client->context;
 	WINPR_ASSERT(context);
@@ -1166,6 +1174,7 @@ static DWORD WINAPI test_peer_mainloop(LPVOID arg)
 
 	WINPR_ASSERT(client->Disconnect);
 	client->Disconnect(client);
+fail:
 	freerdp_peer_context_free(client);
 	freerdp_peer_free(client);
 	return error;
@@ -1194,8 +1203,8 @@ static BOOL test_peer_accepted(freerdp_listener* instance, freerdp_peer* client)
 static void test_server_mainloop(freerdp_listener* instance)
 {
 	HANDLE handles[32] = { 0 };
-	DWORD count;
-	DWORD status;
+	DWORD count = 0;
+	DWORD status = 0;
 
 	WINPR_ASSERT(instance);
 	while (1)
@@ -1266,11 +1275,11 @@ int main(int argc, char* argv[])
 {
 	int rc = -1;
 	BOOL started = FALSE;
-	WSADATA wsaData;
-	freerdp_listener* instance;
+	WSADATA wsaData = { 0 };
+	freerdp_listener* instance = NULL;
 	char* file = NULL;
-	char name[MAX_PATH];
-	long port = 3389, i;
+	char name[MAX_PATH] = { 0 };
+	long port = 3389;
 	BOOL localOnly = FALSE;
 	struct server_info info = { 0 };
 	const char* app = argv[0];
@@ -1279,7 +1288,7 @@ int main(int argc, char* argv[])
 
 	errno = 0;
 
-	for (i = 1; i < argc; i++)
+	for (int i = 1; i < argc; i++)
 	{
 		char* arg = argv[i];
 
@@ -1323,6 +1332,11 @@ int main(int argc, char* argv[])
 
 	if (!instance)
 		return -1;
+
+	if (!info.cert)
+		info.cert = "server.crt";
+	if (!info.key)
+		info.key = "server.key";
 
 	instance->info = (void*)&info;
 	instance->PeerAccepted = test_peer_accepted;

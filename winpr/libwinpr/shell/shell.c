@@ -32,7 +32,7 @@
 
 #include <winpr/crt.h>
 
-#ifdef HAVE_UNISTD_H
+#ifdef WINPR_HAVE_UNISTD_H
 #include <unistd.h>
 #endif
 
@@ -129,7 +129,8 @@ BOOL GetUserProfileDirectoryW(HANDLE hToken, LPWSTR lpProfileDir, LPDWORD lpcchS
 
 	if (bStatus)
 	{
-		MultiByteToWideChar(CP_ACP, 0, lpProfileDirA, cchSizeA, lpProfileDir, *lpcchSize);
+		SSIZE_T size = ConvertUtf8NToWChar(lpProfileDirA, cchSizeA, lpProfileDir, *lpcchSize);
+		bStatus = size >= 0;
 	}
 
 	if (lpProfileDirA)

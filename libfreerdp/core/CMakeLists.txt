@@ -21,7 +21,6 @@ set(MODULE_PREFIX "FREERDP_CORE")
 freerdp_definition_add(-DEXT_PATH="${FREERDP_EXTENSION_PATH}")
 
 freerdp_include_directory_add(${OPENSSL_INCLUDE_DIR})
-freerdp_include_directory_add(${GSS_INCLUDE_DIR})
 
 set(${MODULE_PREFIX}_GATEWAY_DIR "gateway")
 
@@ -90,8 +89,6 @@ set(${MODULE_PREFIX}_SRCS
 	metrics.c
 	capabilities.c
 	capabilities.h
-	certificate.c
-	certificate.h
 	connection.c
 	connection.h
 	redirection.c
@@ -135,7 +132,12 @@ set(${MODULE_PREFIX}_SRCS
 	display.c
 	display.h
 	credssp_auth.c
-	credssp_auth.h)
+	credssp_auth.h
+	rdstls.c
+	rdstls.h
+	aad.c
+	aad.h
+)
 
 set(${MODULE_PREFIX}_SRCS ${${MODULE_PREFIX}_SRCS} ${${MODULE_PREFIX}_GATEWAY_SRCS})
 

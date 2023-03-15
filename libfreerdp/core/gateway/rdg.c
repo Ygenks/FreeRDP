@@ -43,11 +43,7 @@
 
 #define TAG FREERDP_TAG("core.gateway.rdg")
 
-#if defined(_WIN32) || defined(WITH_SPNEGO)
 #define AUTH_PKG NEGO_SSP_NAME
-#else
-#define AUTH_PKG NTLM_SSP_NAME
-#endif
 
 /* HTTP channel response fields present flags. */
 #define HTTP_CHANNEL_RESPONSE_FIELD_CHANNELID 0x1
@@ -322,8 +318,7 @@ static BOOL rdg_read_http_unicode_string(wStream* s, const WCHAR** string, UINT1
 	/* Read length of the string */
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
 	{
-		WLog_ERR(TAG, "[%s]: Could not read stream length, only have % " PRIuz " bytes",
-		         __FUNCTION__, rem);
+		WLog_ERR(TAG, "Could not read stream length, only have % " PRIuz " bytes", rem);
 		return FALSE;
 	}
 	Stream_Read_UINT16(s, strLenBytes);
@@ -334,9 +329,8 @@ static BOOL rdg_read_http_unicode_string(wStream* s, const WCHAR** string, UINT1
 	/* seek past the string - if this fails something is wrong */
 	if (!Stream_SafeSeek(s, strLenBytes))
 	{
-		WLog_ERR(TAG,
-		         "[%s]: Could not read stream data, only have % " PRIuz " bytes, expected %" PRIu16,
-		         __FUNCTION__, rem - 4, strLenBytes);
+		WLog_ERR(TAG, "Could not read stream data, only have % " PRIuz " bytes, expected %" PRIu16,
+		         rem - 4, strLenBytes);
 		return FALSE;
 	}
 
@@ -530,8 +524,18 @@ static int rdg_websocket_read_wstream(BIO* bio, wStream* s,
 		encodingContext->state = WebsocketStateOpcodeAndFin;
 		return 0;
 	}
-	if (s == NULL || Stream_GetRemainingCapacity(s) != encodingContext->payloadLength)
+	if (s == NULL)
+	{
+		WLog_WARN(TAG, "wStream* s=%p", s);
 		return -1;
+	}
+	if (Stream_GetRemainingCapacity(s) != encodingContext->payloadLength)
+	{
+		WLog_WARN(TAG,
+		          "wStream::capacity [%" PRIuz "] != encodingContext::paylaodLangth [%" PRIuz "]",
+		          Stream_GetRemainingCapacity(s), encodingContext->payloadLength);
+		return -1;
+	}
 
 	ERR_clear_error();
 	status = BIO_read(bio, Stream_Pointer(s), encodingContext->payloadLength);
@@ -936,11 +940,9 @@ static BOOL rdg_read_all(rdpTls* tls, BYTE* buffer, size_t size,
 
 static wStream* rdg_receive_packet(rdpRdg* rdg)
 {
-	wStream* s;
 	const size_t header = sizeof(RdgPacketHeader);
 	size_t packetLength;
-	WINPR_ASSERT(header <= INT_MAX);
-	s = Stream_New(NULL, 1024);
+	wStream* s = Stream_New(NULL, 1024);
 
 	if (!s)
 		return NULL;
@@ -1000,6 +1002,38 @@ static BOOL rdg_send_handshake(rdpRdg* rdg)
 	return status;
 }
 
+static BOOL rdg_send_extauth_sspi(rdpRdg* rdg)
+{
+	wStream* s;
+	BOOL status;
+	UINT32 packetSize = 8 + 4 + 2;
+
+	WINPR_ASSERT(rdg);
+
+	const SecBuffer* authToken = credssp_auth_get_output_buffer(rdg->auth);
+	if (!authToken)
+		return FALSE;
+	packetSize += authToken->cbBuffer;
+
+	s = Stream_New(NULL, packetSize);
+
+	if (!s)
+		return FALSE;
+
+	Stream_Write_UINT16(s, PKT_TYPE_EXTENDED_AUTH_MSG); /* Type (2 bytes) */
+	Stream_Write_UINT16(s, 0);                          /* Reserved (2 bytes) */
+	Stream_Write_UINT32(s, packetSize);                 /* PacketLength (4 bytes) */
+	Stream_Write_UINT32(s, ERROR_SUCCESS);              /* Error code */
+	Stream_Write_UINT16(s, (UINT16)authToken->cbBuffer);
+	Stream_Write(s, authToken->pvBuffer, authToken->cbBuffer);
+
+	Stream_SealLength(s);
+	status = rdg_write_packet(rdg, s);
+	Stream_Free(s, TRUE);
+
+	return status;
+}
+
 static BOOL rdg_send_tunnel_request(rdpRdg* rdg)
 {
 	wStream* s;
@@ -1007,23 +1041,23 @@ static BOOL rdg_send_tunnel_request(rdpRdg* rdg)
 	UINT32 packetSize = 16;
 	UINT16 fieldsPresent = 0;
 	WCHAR* PAACookie = NULL;
-	int PAACookieLen = 0;
+	size_t PAACookieLen = 0;
 	const UINT32 capabilities = HTTP_CAPABILITY_TYPE_QUAR_SOH |
 	                            HTTP_CAPABILITY_MESSAGING_CONSENT_SIGN |
 	                            HTTP_CAPABILITY_MESSAGING_SERVICE_MSG;
 
 	if (rdg->extAuth == HTTP_EXTENDED_AUTH_PAA)
 	{
-		PAACookieLen =
-		    ConvertToUnicode(CP_UTF8, 0, rdg->settings->GatewayAccessToken, -1, &PAACookie, 0);
+		PAACookie = ConvertUtf8ToWCharAlloc(rdg->settings->GatewayAccessToken, &PAACookieLen);
 
-		if (!PAACookie || (PAACookieLen < 0) || (PAACookieLen > UINT16_MAX / 2))
+		if (!PAACookie || (PAACookieLen > UINT16_MAX / sizeof(WCHAR)))
 		{
 			free(PAACookie);
 			return FALSE;
 		}
 
-		packetSize += 2 + (UINT32)PAACookieLen * sizeof(WCHAR);
+		PAACookieLen += 1; /* include \0 */
+		packetSize += 2 + (UINT32)(PAACookieLen) * sizeof(WCHAR);
 		fieldsPresent = HTTP_TUNNEL_PACKET_FIELD_PAA_COOKIE;
 	}
 
@@ -1044,7 +1078,7 @@ static BOOL rdg_send_tunnel_request(rdpRdg* rdg)
 
 	if (PAACookie)
 	{
-		Stream_Write_UINT16(s, (UINT16)PAACookieLen * 2); /* PAA cookie string length */
+		Stream_Write_UINT16(s, (UINT16)PAACookieLen * sizeof(WCHAR)); /* PAA cookie string length */
 		Stream_Write_UTF16_String(s, PAACookie, (size_t)PAACookieLen);
 	}
 
@@ -1065,18 +1099,20 @@ static BOOL rdg_send_tunnel_authorization(rdpRdg* rdg)
 {
 	wStream* s;
 	BOOL status;
-	WCHAR* clientName = NULL;
-	UINT32 packetSize;
-	int clientNameLen =
-	    ConvertToUnicode(CP_UTF8, 0, rdg->settings->ClientHostname, -1, &clientName, 0);
+	WINPR_ASSERT(rdg);
+	size_t clientNameLen = 0;
+	WCHAR* clientName =
+	    freerdp_settings_get_string_as_utf16(rdg->settings, FreeRDP_ClientHostname, &clientNameLen);
 
-	if (!clientName || (clientNameLen < 0) || (clientNameLen > UINT16_MAX / 2))
+	if (!clientName || (clientNameLen >= UINT16_MAX / sizeof(WCHAR)))
 	{
 		free(clientName);
 		return FALSE;
 	}
 
-	packetSize = 12 + (UINT32)clientNameLen * sizeof(WCHAR);
+	clientNameLen++; // length including terminating '\0'
+
+	size_t packetSize = 12ull + clientNameLen * sizeof(WCHAR);
 	s = Stream_New(NULL, packetSize);
 
 	if (!s)
@@ -1085,11 +1121,11 @@ static BOOL rdg_send_tunnel_authorization(rdpRdg* rdg)
 		return FALSE;
 	}
 
-	Stream_Write_UINT16(s, PKT_TYPE_TUNNEL_AUTH);      /* Type (2 bytes) */
-	Stream_Write_UINT16(s, 0);                         /* Reserved (2 bytes) */
-	Stream_Write_UINT32(s, packetSize);                /* PacketLength (4 bytes) */
-	Stream_Write_UINT16(s, 0);                         /* FieldsPresent (2 bytes) */
-	Stream_Write_UINT16(s, (UINT16)clientNameLen * 2); /* Client name string length */
+	Stream_Write_UINT16(s, PKT_TYPE_TUNNEL_AUTH);                  /* Type (2 bytes) */
+	Stream_Write_UINT16(s, 0);                                     /* Reserved (2 bytes) */
+	Stream_Write_UINT32(s, packetSize);                            /* PacketLength (4 bytes) */
+	Stream_Write_UINT16(s, 0);                                     /* FieldsPresent (2 bytes) */
+	Stream_Write_UINT16(s, (UINT16)clientNameLen * sizeof(WCHAR)); /* Client name string length */
 	Stream_Write_UTF16_String(s, clientName, (size_t)clientNameLen);
 	Stream_SealLength(s);
 	status = rdg_write_packet(rdg, s);
@@ -1109,13 +1145,17 @@ static BOOL rdg_send_channel_create(rdpRdg* rdg)
 	wStream* s = NULL;
 	BOOL status = FALSE;
 	WCHAR* serverName = NULL;
-	int serverNameLen =
-	    ConvertToUnicode(CP_UTF8, 0, rdg->settings->ServerHostname, -1, &serverName, 0);
-	UINT32 packetSize = 16 + ((UINT32)serverNameLen) * 2;
+	size_t serverNameLen = 0;
 
-	if ((serverNameLen < 0) || (serverNameLen > UINT16_MAX / 2))
+	WINPR_ASSERT(rdg);
+	serverName =
+	    freerdp_settings_get_string_as_utf16(rdg->settings, FreeRDP_ServerHostname, &serverNameLen);
+
+	if (!serverName || (serverNameLen >= UINT16_MAX / sizeof(WCHAR)))
 		goto fail;
 
+	serverNameLen++; // length including terminating '\0'
+	size_t packetSize = 16ull + serverNameLen * sizeof(WCHAR);
 	s = Stream_New(NULL, packetSize);
 
 	if (!s)
@@ -1128,7 +1168,7 @@ static BOOL rdg_send_channel_create(rdpRdg* rdg)
 	Stream_Write_UINT8(s, 0);                        /* Number of alternative resources (1 byte) */
 	Stream_Write_UINT16(s, (UINT16)rdg->settings->ServerPort); /* Resource port (2 bytes) */
 	Stream_Write_UINT16(s, 3);                                 /* Protocol number (2 bytes) */
-	Stream_Write_UINT16(s, (UINT16)serverNameLen * 2);
+	Stream_Write_UINT16(s, (UINT16)serverNameLen * sizeof(WCHAR));
 	Stream_Write_UTF16_String(s, serverName, (size_t)serverNameLen);
 	Stream_SealLength(s);
 	status = rdg_write_packet(rdg, s);
@@ -1255,10 +1295,8 @@ static BOOL rdg_recv_auth_token(rdpCredsspAuth* auth, HttpResponse* response)
 static BOOL rdg_skip_seed_payload(rdpTls* tls, SSIZE_T lastResponseLength,
                                   rdg_http_encoding_context* transferEncoding)
 {
-	BYTE seed_payload[10];
+	BYTE seed_payload[10] = { 0 };
 	const size_t size = sizeof(seed_payload);
-
-	WINPR_ASSERT(size < SSIZE_MAX);
 
 	/* Per [MS-TSGU] 3.3.5.1 step 4, after final OK response RDG server sends
 	 * random "seed" payload of limited size. In practice it's 10 bytes.
@@ -1301,12 +1339,15 @@ static BOOL rdg_process_handshake_response(rdpRdg* rdg, wStream* s)
 	         ", extendedAuth=%s",
 	         error, verMajor, verMinor, serverVersion, extended_auth_to_string(extendedAuth));
 
-	if (FAILED(errorCode))
+	if (FAILED((HRESULT)errorCode))
 	{
 		WLog_ERR(TAG, "Handshake error %s", error);
 		freerdp_set_last_error_log(rdg->context, errorCode);
 		return FALSE;
 	}
+
+	if (rdg->extAuth == HTTP_EXTENDED_AUTH_SSPI_NTLM)
+		return rdg_send_extauth_sspi(rdg);
 
 	return rdg_send_tunnel_request(rdg);
 }
@@ -1318,7 +1359,7 @@ static BOOL rdg_process_tunnel_response_optional(rdpRdg* rdg, wStream* s, UINT16
 		/* Seek over tunnelId (4 bytes) */
 		if (!Stream_SafeSeek(s, 4))
 		{
-			WLog_ERR(TAG, "[%s] Short tunnelId, got %" PRIuz ", expected 4", __FUNCTION__,
+			WLog_ERR(TAG, "Short tunnelId, got %" PRIuz ", expected 4",
 			         Stream_GetRemainingLength(s));
 			return FALSE;
 		}
@@ -1339,15 +1380,14 @@ static BOOL rdg_process_tunnel_response_optional(rdpRdg* rdg, wStream* s, UINT16
 		/* Seek over nonce (20 bytes) */
 		if (!Stream_SafeSeek(s, 20))
 		{
-			WLog_ERR(TAG, "[%s] Short nonce, got %" PRIuz ", expected 20", __FUNCTION__,
-			         Stream_GetRemainingLength(s));
+			WLog_ERR(TAG, "Short nonce, got %" PRIuz ", expected 20", Stream_GetRemainingLength(s));
 			return FALSE;
 		}
 
 		/* Read serverCert */
 		if (!rdg_read_http_unicode_string(s, NULL, NULL))
 		{
-			WLog_ERR(TAG, "[%s] Failed to read server certificate", __FUNCTION__);
+			WLog_ERR(TAG, "Failed to read server certificate");
 			return FALSE;
 		}
 	}
@@ -1364,7 +1404,7 @@ static BOOL rdg_process_tunnel_response_optional(rdpRdg* rdg, wStream* s, UINT16
 		/* Read message string and invoke callback */
 		if (!rdg_read_http_unicode_string(s, &msg, &msgLenBytes))
 		{
-			WLog_ERR(TAG, "[%s] Failed to read consent message", __FUNCTION__);
+			WLog_ERR(TAG, "Failed to read consent message");
 			return FALSE;
 		}
 
@@ -1398,7 +1438,7 @@ static BOOL rdg_process_tunnel_response(rdpRdg* rdg, wStream* s)
 	WLog_DBG(TAG, "serverVersion=%" PRId16 ", errorCode=%s, fieldsPresent=%s", serverVersion, error,
 	         tunnel_response_fields_present_to_string(fieldsPresent));
 
-	if (FAILED(errorCode))
+	if (FAILED((HRESULT)errorCode))
 	{
 		WLog_ERR(TAG, "Tunnel creation error %s", error);
 		freerdp_set_last_error_log(rdg->context, errorCode);
@@ -1433,7 +1473,8 @@ static BOOL rdg_process_tunnel_authorization_response(rdpRdg* rdg, wStream* s)
 	WLog_DBG(TAG, "errorCode=%s, fieldsPresent=%s", error,
 	         tunnel_authorization_response_fields_present_to_string(fieldsPresent));
 
-	if (FAILED(errorCode))
+	/* [MS-TSGU] 3.7.5.2.7 */
+	if (errorCode != S_OK && errorCode != E_PROXY_QUARANTINE_ACCESSDENIED)
 	{
 		WLog_ERR(TAG, "Tunnel authorization error %s", error);
 		freerdp_set_last_error_log(rdg->context, errorCode);
@@ -1441,6 +1482,53 @@ static BOOL rdg_process_tunnel_authorization_response(rdpRdg* rdg, wStream* s)
 	}
 
 	return rdg_send_channel_create(rdg);
+}
+
+static BOOL rdg_process_extauth_sspi(rdpRdg* rdg, wStream* s)
+{
+	UINT32 errorCode;
+	UINT16 authBlobLen;
+	SecBuffer authToken = { 0 };
+	BYTE* authTokenData = NULL;
+
+	WINPR_ASSERT(rdg);
+
+	Stream_Read_UINT32(s, errorCode);
+	Stream_Read_UINT16(s, authBlobLen);
+
+	if (errorCode != ERROR_SUCCESS)
+	{
+		WLog_ERR(TAG, "EXTAUTH_SSPI_NTLM failed with error %s [0x%08X]",
+		         GetSecurityStatusString(errorCode), errorCode);
+		return FALSE;
+	}
+
+	if (authBlobLen == 0)
+	{
+		if (credssp_auth_is_complete(rdg->auth))
+		{
+			credssp_auth_free(rdg->auth);
+			rdg->auth = NULL;
+			return rdg_send_tunnel_request(rdg);
+		}
+		return FALSE;
+	}
+
+	authTokenData = malloc(authBlobLen);
+	Stream_Read(s, authTokenData, authBlobLen);
+
+	authToken.pvBuffer = authTokenData;
+	authToken.cbBuffer = authBlobLen;
+
+	credssp_auth_take_input_buffer(rdg->auth, &authToken);
+
+	if (credssp_auth_authenticate(rdg->auth) < 0)
+		return FALSE;
+
+	if (credssp_auth_have_output_token(rdg->auth))
+		return rdg_send_extauth_sspi(rdg);
+
+	return FALSE;
 }
 
 static BOOL rdg_process_channel_response(rdpRdg* rdg, wStream* s)
@@ -1465,7 +1553,7 @@ static BOOL rdg_process_channel_response(rdpRdg* rdg, wStream* s)
 	WLog_DBG(TAG, "channel response errorCode=%s, fieldsPresent=%s", error,
 	         channel_response_fields_present_to_string(fieldsPresent));
 
-	if (FAILED(errorCode))
+	if (FAILED((HRESULT)errorCode))
 	{
 		WLog_ERR(TAG, "channel response errorCode=%s, fieldsPresent=%s", error,
 		         channel_response_fields_present_to_string(fieldsPresent));
@@ -1493,8 +1581,7 @@ static BOOL rdg_process_packet(rdpRdg* rdg, wStream* s)
 
 	if (Stream_Length(s) < packetLength)
 	{
-		WLog_ERR(TAG, "[%s] Short packet %" PRIuz ", expected %" PRIuz, __FUNCTION__,
-		         Stream_Length(s), packetLength);
+		WLog_ERR(TAG, "Short packet %" PRIuz ", expected %" PRIuz, Stream_Length(s), packetLength);
 		return FALSE;
 	}
 
@@ -1517,7 +1604,15 @@ static BOOL rdg_process_packet(rdpRdg* rdg, wStream* s)
 			break;
 
 		case PKT_TYPE_DATA:
-			WLog_ERR(TAG, "[%s] Unexpected packet type DATA", __FUNCTION__);
+			WLog_ERR(TAG, "Unexpected packet type DATA");
+			return FALSE;
+
+		case PKT_TYPE_EXTENDED_AUTH_MSG:
+			status = rdg_process_extauth_sspi(rdg, s);
+			break;
+
+		default:
+			WLog_ERR(TAG, "PKG TYPE 0x%x not implemented", type);
 			return FALSE;
 	}
 
@@ -1564,6 +1659,9 @@ static BOOL rdg_get_gateway_credentials(rdpContext* context, rdp_auth_reason rea
 		case AUTH_SUCCESS:
 		case AUTH_SKIP:
 			return TRUE;
+		case AUTH_CANCELLED:
+			freerdp_set_last_error_log(instance->context, FREERDP_ERROR_CONNECT_CANCELLED);
+			return FALSE;
 		case AUTH_NO_CREDENTIALS:
 			freerdp_set_last_error_log(instance->context,
 			                           FREERDP_ERROR_CONNECT_NO_OR_MISSING_CREDENTIALS);
@@ -1574,7 +1672,7 @@ static BOOL rdg_get_gateway_credentials(rdpContext* context, rdp_auth_reason rea
 	}
 }
 
-static BOOL rdg_auth_init(rdpRdg* rdg, rdpTls* tls)
+static BOOL rdg_auth_init(rdpRdg* rdg, rdpTls* tls, TCHAR* authPkg)
 {
 	rdpContext* context = rdg->context;
 	rdpSettings* settings = context->settings;
@@ -1585,47 +1683,52 @@ static BOOL rdg_auth_init(rdpRdg* rdg, rdpTls* tls)
 	if (!rdg->auth)
 		return FALSE;
 
-	if (!credssp_auth_init(rdg->auth, AUTH_PKG, tls->Bindings))
+	if (!credssp_auth_init(rdg->auth, authPkg, tls->Bindings))
 		return FALSE;
 
-	if (freerdp_settings_get_bool(settings, FreeRDP_SmartcardLogon))
+	bool doSCLogon = freerdp_settings_get_bool(settings, FreeRDP_SmartcardLogon);
+	if (doSCLogon)
 	{
 		if (!smartcard_getCert(context, &rdg->smartcard, TRUE))
 			return FALSE;
 
 		if (!rdg_get_gateway_credentials(context, AUTH_SMARTCARD_PIN))
 			return FALSE;
-#ifdef _WIN32
-		{
-			CERT_CREDENTIAL_INFO certInfo = { sizeof(CERT_CREDENTIAL_INFO), { 0 } };
-			LPSTR marshalledCredentials;
-
-			memcpy(certInfo.rgbHashOfCert, rdg->smartcard->sha1Hash,
-			       sizeof(certInfo.rgbHashOfCert));
-
-			if (!CredMarshalCredentialA(CertCredential, &certInfo, &marshalledCredentials))
-			{
-				WLog_ERR(TAG, "error marshalling cert credentials");
-				return FALSE;
-			}
-
-			if (sspi_SetAuthIdentityA(&identity, marshalledCredentials, NULL,
-			                          settings->GatewayPassword) < 0)
-				return FALSE;
-
-			CredFree(marshalledCredentials);
-		}
-#else
-		if (sspi_SetAuthIdentityA(&identity, settings->GatewayUsername, settings->GatewayDomain,
-		                          settings->GatewayPassword) < 0)
-			return FALSE;
-#endif
 	}
 	else
 	{
 		if (!rdg_get_gateway_credentials(context, GW_AUTH_RDG))
 			return FALSE;
 
+		/* Auth callback might changed logon to smartcard so check again */
+		doSCLogon = freerdp_settings_get_bool(settings, FreeRDP_SmartcardLogon);
+		if (doSCLogon && !smartcard_getCert(context, &rdg->smartcard, TRUE))
+			return FALSE;
+	}
+
+#ifdef _WIN32
+	if (doSCLogon)
+	{
+		CERT_CREDENTIAL_INFO certInfo = { sizeof(CERT_CREDENTIAL_INFO), { 0 } };
+		LPSTR marshalledCredentials;
+
+		memcpy(certInfo.rgbHashOfCert, rdg->smartcard->sha1Hash, sizeof(certInfo.rgbHashOfCert));
+
+		if (!CredMarshalCredentialA(CertCredential, &certInfo, &marshalledCredentials))
+		{
+			WLog_ERR(TAG, "error marshaling cert credentials");
+			return FALSE;
+		}
+
+		if (sspi_SetAuthIdentityA(&identity, marshalledCredentials, NULL,
+		                          settings->GatewayPassword) < 0)
+			return FALSE;
+
+		CredFree(marshalledCredentials);
+	}
+	else
+#endif
+	{
 		if (sspi_SetAuthIdentityA(&identity, settings->GatewayUsername, settings->GatewayDomain,
 		                          settings->GatewayPassword) < 0)
 			return FALSE;
@@ -1662,7 +1765,7 @@ static BOOL rdg_send_http_request(rdpRdg* rdg, rdpTls* tls, const char* method,
 	sz = Stream_Length(s);
 
 	if (sz <= INT_MAX)
-		status = tls_write_all(tls, Stream_Buffer(s), (int)sz);
+		status = freerdp_tls_write_all(tls, Stream_Buffer(s), (int)sz);
 
 	Stream_Free(s, TRUE);
 	return (status >= 0);
@@ -1731,7 +1834,7 @@ static BOOL rdg_tls_connect(rdpRdg* rdg, rdpTls* tls, const char* peerAddress, i
 	tls->hostname = settings->GatewayHostname;
 	tls->port = (int)settings->GatewayPort;
 	tls->isGatewayTransport = TRUE;
-	status = tls_connect(tls, bufferedBio);
+	status = freerdp_tls_connect(tls, bufferedBio);
 	if (status < 1)
 	{
 		rdpContext* context = rdg->context;
@@ -1765,7 +1868,7 @@ static BOOL rdg_establish_data_connection(rdpRdg* rdg, rdpTls* tls, const char* 
 	WINPR_ASSERT(rpcFallback);
 	if (rdg->extAuth == HTTP_EXTENDED_AUTH_NONE)
 	{
-		if (!rdg_auth_init(rdg, tls))
+		if (!rdg_auth_init(rdg, tls, AUTH_PKG))
 			return FALSE;
 
 		if (!rdg_send_http_request(rdg, tls, method, TransferEncodingIdentity))
@@ -1880,7 +1983,13 @@ static BOOL rdg_establish_data_connection(rdpRdg* rdg, rdpTls* tls, const char* 
 			rdg->transferEncoding.isWebsocketTransport = TRUE;
 			rdg->transferEncoding.context.websocket.state = WebsocketStateOpcodeAndFin;
 			rdg->transferEncoding.context.websocket.responseStreamBuffer = NULL;
-
+			if (rdg->extAuth == HTTP_EXTENDED_AUTH_SSPI_NTLM)
+			{
+				/* create a new auth context for SSPI_NTLM. This must be done after the last
+				 * rdg_send_http_request */
+				if (!rdg_auth_init(rdg, tls, NTLM_SSP_NAME))
+					return FALSE;
+			}
 			return TRUE;
 		default:
 			return FALSE;
@@ -1904,6 +2013,14 @@ static BOOL rdg_establish_data_connection(rdpRdg* rdg, rdpTls* tls, const char* 
 	{
 		if (!rdg_send_http_request(rdg, tls, method, TransferEncodingChunked))
 			return FALSE;
+
+		if (rdg->extAuth == HTTP_EXTENDED_AUTH_SSPI_NTLM)
+		{
+			/* create a new auth context for SSPI_NTLM. This must be done after the last
+			 * rdg_send_http_request (RDG_IN_DATA is always after RDG_OUT_DATA) */
+			if (!rdg_auth_init(rdg, tls, NTLM_SSP_NAME))
+				return FALSE;
+		}
 	}
 
 	return TRUE;
@@ -2074,7 +2191,7 @@ static int rdg_write_websocket_data_packet(rdpRdg* rdg, const BYTE* buf, int isi
 
 	Stream_SealLength(sWS);
 
-	status = tls_write_all(rdg->tlsOut, Stream_Buffer(sWS), Stream_Length(sWS));
+	status = freerdp_tls_write_all(rdg->tlsOut, Stream_Buffer(sWS), Stream_Length(sWS));
 	Stream_Free(sWS, TRUE);
 
 	if (status < 0)
@@ -2120,7 +2237,7 @@ static int rdg_write_chunked_data_packet(rdpRdg* rdg, const BYTE* buf, int isize
 		return -1;
 	}
 
-	status = tls_write_all(rdg->tlsIn, Stream_Buffer(sChunk), (int)len);
+	status = freerdp_tls_write_all(rdg->tlsIn, Stream_Buffer(sChunk), (int)len);
 	Stream_Free(sChunk, TRUE);
 
 	if (status < 0)
@@ -2203,7 +2320,7 @@ static BOOL rdg_process_service_message(rdpRdg* rdg, wStream* s)
 	/* Read message string */
 	if (!rdg_read_http_unicode_string(s, &msg, &msgLenBytes))
 	{
-		WLog_ERR(TAG, "[%s] Failed to read string", __FUNCTION__);
+		WLog_ERR(TAG, "Failed to read string");
 		return FALSE;
 	}
 
@@ -2284,8 +2401,7 @@ static BOOL rdg_process_control_packet(rdpRdg* rdg, int type, size_t packetLengt
 		case PKT_TYPE_SERVICE_MESSAGE:
 			if (!s)
 			{
-				WLog_ERR(TAG, "[%s] PKT_TYPE_SERVICE_MESSAGE requires payload but none was sent",
-				         __FUNCTION__);
+				WLog_ERR(TAG, "PKT_TYPE_SERVICE_MESSAGE requires payload but none was sent");
 				return FALSE;
 			}
 			status = rdg_process_service_message(rdg, s);
@@ -2592,7 +2708,8 @@ rdpRdg* rdg_new(rdpContext* context)
 		rdg->state = RDG_CLIENT_STATE_INITIAL;
 		rdg->context = context;
 		rdg->settings = rdg->context->settings;
-		rdg->extAuth = HTTP_EXTENDED_AUTH_NONE;
+		rdg->extAuth = (rdg->settings->GatewayHttpExtAuthSspiNtlm ? HTTP_EXTENDED_AUTH_SSPI_NTLM
+		                                                          : HTTP_EXTENDED_AUTH_NONE);
 
 		if (rdg->settings->GatewayAccessToken)
 			rdg->extAuth = HTTP_EXTENDED_AUTH_PAA;
@@ -2605,12 +2722,12 @@ rdpRdg* rdg_new(rdpContext* context)
 
 		sprintf_s(bracedUuid, sizeof(bracedUuid), "{%s}", stringUuid);
 		RpcStringFreeA(&stringUuid);
-		rdg->tlsOut = tls_new(rdg->settings);
+		rdg->tlsOut = freerdp_tls_new(rdg->settings);
 
 		if (!rdg->tlsOut)
 			goto rdg_alloc_error;
 
-		rdg->tlsIn = tls_new(rdg->settings);
+		rdg->tlsIn = freerdp_tls_new(rdg->settings);
 
 		if (!rdg->tlsIn)
 			goto rdg_alloc_error;
@@ -2645,6 +2762,12 @@ rdpRdg* rdg_new(rdpContext* context)
 
 					break;
 
+				case HTTP_EXTENDED_AUTH_SSPI_NTLM:
+					if (!http_context_set_rdg_auth_scheme(rdg->http, "SSPI_NTLM"))
+						goto rdg_alloc_error;
+
+					break;
+
 				default:
 					WLog_DBG(TAG, "RDG extended authentication method %d not supported",
 					         rdg->extAuth);
@@ -2674,8 +2797,8 @@ void rdg_free(rdpRdg* rdg)
 	if (!rdg)
 		return;
 
-	tls_free(rdg->tlsOut);
-	tls_free(rdg->tlsIn);
+	freerdp_tls_free(rdg->tlsOut);
+	freerdp_tls_free(rdg->tlsIn);
 	http_context_free(rdg->http);
 	credssp_auth_free(rdg->auth);
 

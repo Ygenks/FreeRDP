@@ -24,6 +24,7 @@
 #include <freerdp/config.h>
 
 #include "nla.h"
+#include "aad.h"
 #include "mcs.h"
 #include "tpkt.h"
 #include "../codec/bulk.h"
@@ -105,14 +106,6 @@ typedef enum
 	FINALIZE_DEACTIVATE_REACTIVATE = 0x200
 } rdpFinalizePduType;
 
-#define FINALIZE_SC_COMPLETE                                           \
-	(FINALIZE_SC_SYNCHRONIZE_PDU | FINALIZE_SC_CONTROL_COOPERATE_PDU | \
-	 FINALIZE_SC_CONTROL_GRANTED_PDU | FINALIZE_SC_FONT_MAP_PDU)
-#define FINALIZE_CS_COMPLETE                                                 \
-	(FINALIZE_CS_SYNCHRONIZE_PDU | FINALIZE_CS_CONTROL_COOPERATE_PDU |       \
-	 FINALIZE_CS_CONTROL_REQUEST_PDU | FINALIZE_CS_PERSISTENT_KEY_LIST_PDU | \
-	 FINALIZE_CS_FONT_LIST_PDU)
-
 /* Data PDU Types */
 typedef enum
 {
@@ -154,6 +147,7 @@ struct rdp_rdp
 	CONNECTION_STATE state;
 	rdpContext* context;
 	rdpNla* nla;
+	rdpAad* aad;
 	rdpMcs* mcs;
 	rdpNego* nego;
 	rdpBulk* bulk;
@@ -164,16 +158,17 @@ struct rdp_rdp
 	rdpRedirection* redirection;
 	rdpSettings* settings;
 	rdpSettings* originalSettings;
+	rdpSettings* remoteSettings;
 	rdpTransport* transport;
 	rdpAutoDetect* autodetect;
 	rdpHeartbeat* heartbeat;
 	rdpMultitransport* multitransport;
 	WINPR_RC4_CTX* rc4_decrypt_key;
-	int decrypt_use_count;
-	int decrypt_checksum_use_count;
+	UINT32 decrypt_use_count;
+	UINT32 decrypt_checksum_use_count;
 	WINPR_RC4_CTX* rc4_encrypt_key;
-	int encrypt_use_count;
-	int encrypt_checksum_use_count;
+	UINT32 encrypt_use_count;
+	UINT32 encrypt_checksum_use_count;
 	WINPR_CIPHER_CTX* fips_encrypt;
 	WINPR_CIPHER_CTX* fips_decrypt;
 	UINT32 sec_flags;
@@ -254,6 +249,8 @@ FREERDP_LOCAL rdpRdp* rdp_new(rdpContext* context);
 FREERDP_LOCAL BOOL rdp_reset(rdpRdp* rdp);
 FREERDP_LOCAL void rdp_free(rdpRdp* rdp);
 
+FREERDP_LOCAL BOOL rdp_io_callback_set_event(rdpRdp* rdp, BOOL reset);
+
 FREERDP_LOCAL const rdpTransportIo* rdp_get_io_callbacks(rdpRdp* rdp);
 FREERDP_LOCAL BOOL rdp_set_io_callbacks(rdpRdp* rdp, const rdpTransportIo* io_callbacks);
 
@@ -271,7 +268,7 @@ FREERDP_LOCAL void* rdp_get_io_callback_context(rdpRdp* rdp);
 #endif
 
 const char* data_pdu_type_to_string(UINT8 type);
-const char* pdu_type_to_str(UINT16 pduType);
+const char* pdu_type_to_str(UINT16 pduType, char* buffer, size_t length);
 
 BOOL rdp_finalize_reset_flags(rdpRdp* rdp, BOOL clearAll);
 BOOL rdp_finalize_set_flag(rdpRdp* rdp, UINT32 flag);
@@ -282,5 +279,18 @@ BOOL rdp_decrypt(rdpRdp* rdp, wStream* s, UINT16* pLength, UINT16 securityFlags)
 
 BOOL rdp_set_error_info(rdpRdp* rdp, UINT32 errorInfo);
 BOOL rdp_send_error_info(rdpRdp* rdp);
+
+void rdp_free_rc4_encrypt_keys(rdpRdp* rdp);
+BOOL rdp_reset_rc4_encrypt_keys(rdpRdp* rdp);
+
+void rdp_free_rc4_decrypt_keys(rdpRdp* rdp);
+BOOL rdp_reset_rc4_decrypt_keys(rdpRdp* rdp);
+
+const char* rdp_security_flag_string(UINT32 securityFlags, char* buffer, size_t size);
+
+BOOL rdp_set_backup_settings(rdpRdp* rdp);
+BOOL rdp_reset_runtime_settings(rdpRdp* rdp);
+
+void rdp_log_build_warnings(void);
 
 #endif /* FREERDP_LIB_CORE_RDP_H */

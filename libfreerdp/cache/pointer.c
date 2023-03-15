@@ -26,35 +26,38 @@
 #include <winpr/stream.h>
 
 #include <freerdp/log.h>
-#include <freerdp/cache/pointer.h>
 
 #include "pointer.h"
+#include "cache.h"
 
 #define TAG FREERDP_TAG("cache.pointer")
 
-static BOOL pointer_cache_put(rdpPointerCache* pointer_cache, UINT32 index, rdpPointer* pointer);
+static BOOL pointer_cache_put(rdpPointerCache* pointer_cache, UINT32 index, rdpPointer* pointer,
+                              BOOL colorCache);
 static rdpPointer* pointer_cache_get(rdpPointerCache* pointer_cache, UINT32 index);
+
+static void pointer_clear(rdpPointer* pointer)
+{
+	if (pointer)
+	{
+		pointer->lengthAndMask = 0;
+		free(pointer->andMaskData);
+		pointer->andMaskData = NULL;
+
+		pointer->lengthXorMask = 0;
+		free(pointer->xorMaskData);
+		pointer->xorMaskData = NULL;
+	}
+}
 
 static void pointer_free(rdpContext* context, rdpPointer* pointer)
 {
 	if (pointer)
 	{
 		IFCALL(pointer->Free, context, pointer);
-
-		if (pointer->xorMaskData)
-		{
-			free(pointer->xorMaskData);
-			pointer->xorMaskData = NULL;
-		}
-
-		if (pointer->andMaskData)
-		{
-			free(pointer->andMaskData);
-			pointer->andMaskData = NULL;
-		}
-
-		free(pointer);
+		pointer_clear(pointer);
 	}
+	free(pointer);
 }
 
 static BOOL update_pointer_position(rdpContext* context,
@@ -103,30 +106,25 @@ static BOOL upate_pointer_copy_andxor(rdpPointer* pointer, const BYTE* andMaskDa
                                       size_t lengthAndMask, const BYTE* xorMaskData,
                                       size_t lengthXorMask)
 {
-	pointer->lengthAndMask = 0;
-	pointer->lengthXorMask = 0;
-
 	WINPR_ASSERT(pointer);
+
+	pointer_clear(pointer);
 	if (lengthAndMask && andMaskData)
 	{
-		BYTE* tmp;
 		pointer->lengthAndMask = lengthAndMask;
-		tmp = (BYTE*)realloc(pointer->andMaskData, lengthAndMask);
-		if (!tmp)
+		pointer->andMaskData = (BYTE*)malloc(lengthAndMask);
+		if (!pointer->andMaskData)
 			return FALSE;
-		pointer->andMaskData = tmp;
 
 		CopyMemory(pointer->andMaskData, andMaskData, lengthAndMask);
 	}
 
 	if (lengthXorMask && xorMaskData)
 	{
-		BYTE* tmp;
 		pointer->lengthXorMask = lengthXorMask;
-		tmp = (BYTE*)realloc(pointer->xorMaskData, lengthXorMask);
-		if (!tmp)
+		pointer->xorMaskData = (BYTE*)malloc(lengthXorMask);
+		if (!pointer->xorMaskData)
 			return FALSE;
-		pointer->xorMaskData = tmp;
 
 		CopyMemory(pointer->xorMaskData, xorMaskData, lengthXorMask);
 	}
@@ -163,13 +161,11 @@ static BOOL update_pointer_color(rdpContext* context, const POINTER_COLOR_UPDATE
 	if (!IFCALLRESULT(TRUE, pointer->New, context, pointer))
 		goto out_fail;
 
-	if (!pointer_cache_put(cache->pointer, pointer_color->cacheIndex, pointer))
+	if (!pointer_cache_put(cache->pointer, pointer_color->cacheIndex, pointer, TRUE))
 		goto out_fail;
 
-	if (!IFCALLRESULT(TRUE, pointer->Set, context, pointer))
-		goto out_fail;
+	return IFCALLRESULT(TRUE, pointer->Set, context, pointer);
 
-	return TRUE;
 out_fail:
 	pointer_free(context, pointer);
 	return FALSE;
@@ -203,13 +199,11 @@ static BOOL update_pointer_large(rdpContext* context, const POINTER_LARGE_UPDATE
 	if (!IFCALLRESULT(TRUE, pointer->New, context, pointer))
 		goto out_fail;
 
-	if (!pointer_cache_put(cache->pointer, pointer_large->cacheIndex, pointer))
+	if (!pointer_cache_put(cache->pointer, pointer_large->cacheIndex, pointer, FALSE))
 		goto out_fail;
 
-	if (!IFCALLRESULT(TRUE, pointer->Set, context, pointer))
-		goto out_fail;
+	return IFCALLRESULT(TRUE, pointer->Set, context, pointer);
 
-	return TRUE;
 out_fail:
 	pointer_free(context, pointer);
 	return FALSE;
@@ -242,12 +236,11 @@ static BOOL update_pointer_new(rdpContext* context, const POINTER_NEW_UPDATE* po
 	if (!IFCALLRESULT(TRUE, pointer->New, context, pointer))
 		goto out_fail;
 
-	if (!pointer_cache_put(cache->pointer, pointer_new->colorPtrAttr.cacheIndex, pointer))
+	if (!pointer_cache_put(cache->pointer, pointer_new->colorPtrAttr.cacheIndex, pointer, FALSE))
 		goto out_fail;
 
-	if (!IFCALLRESULT(TRUE, pointer->Set, context, pointer))
-		goto out_fail;
-	return TRUE;
+	return IFCALLRESULT(TRUE, pointer->Set, context, pointer);
+
 out_fail:
 	pointer_free(context, pointer);
 	return FALSE;
@@ -280,7 +273,8 @@ rdpPointer* pointer_cache_get(rdpPointerCache* pointer_cache, UINT32 index)
 
 	if (index >= pointer_cache->cacheSize)
 	{
-		WLog_ERR(TAG, "invalid pointer index:%" PRIu32 "", index);
+		WLog_ERR(TAG, "invalid pointer index:%" PRIu32 " [%" PRIu32 "]", index,
+		         pointer_cache->cacheSize);
 		return NULL;
 	}
 
@@ -289,16 +283,31 @@ rdpPointer* pointer_cache_get(rdpPointerCache* pointer_cache, UINT32 index)
 	return pointer;
 }
 
-BOOL pointer_cache_put(rdpPointerCache* pointer_cache, UINT32 index, rdpPointer* pointer)
+BOOL pointer_cache_put(rdpPointerCache* pointer_cache, UINT32 index, rdpPointer* pointer,
+                       BOOL colorCache)
 {
 	rdpPointer* prevPointer;
+	const size_t id = colorCache ? FreeRDP_ColorPointerCacheSize : FreeRDP_PointerCacheSize;
 
 	WINPR_ASSERT(pointer_cache);
+	WINPR_ASSERT(pointer_cache->context);
 
+	const UINT32 size = freerdp_settings_get_uint32(pointer_cache->context->settings, id);
 	if (index >= pointer_cache->cacheSize)
 	{
-		WLog_ERR(TAG, "invalid pointer index:%" PRIu32 "", index);
+		WLog_ERR(TAG,
+		         "invalid pointer index:%" PRIu32 " [allocated %" PRIu32 ", %s size %" PRIu32 "]",
+		         index, pointer_cache->cacheSize,
+		         colorCache ? "color-pointer-cache" : "pointer-cache", size);
 		return FALSE;
+	}
+	if (index >= size)
+	{
+		WLog_WARN(TAG,
+		          "suspicious pointer index:%" PRIu32 " [allocated %" PRIu32 ", %s size %" PRIu32
+		          "]",
+		          index, pointer_cache->cacheSize,
+		          colorCache ? "color-pointer-cache" : "pointer-cache", size);
 	}
 
 	WINPR_ASSERT(pointer_cache->entries);
@@ -348,7 +357,10 @@ rdpPointerCache* pointer_cache_new(rdpContext* context)
 
 	/* seen invalid pointer cache requests by mstsc (off by 1) so we ensure the cache entry size
 	 * matches */
-	pointer_cache->cacheSize = freerdp_settings_get_uint32(settings, FreeRDP_PointerCacheSize) + 1;
+	const UINT32 size = freerdp_settings_get_uint32(settings, FreeRDP_PointerCacheSize);
+	const UINT32 colorSize = freerdp_settings_get_uint32(settings, FreeRDP_ColorPointerCacheSize);
+	pointer_cache->cacheSize = MAX(size, colorSize) + 1;
+
 	pointer_cache->entries = (rdpPointer**)calloc(pointer_cache->cacheSize, sizeof(rdpPointer*));
 
 	if (!pointer_cache->entries)

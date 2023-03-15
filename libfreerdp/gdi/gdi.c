@@ -45,6 +45,7 @@
 #include "gdi.h"
 #include "../core/graphics.h"
 #include "../core/update.h"
+#include "../cache/cache.h"
 
 #define TAG FREERDP_TAG("gdi")
 
@@ -471,7 +472,13 @@ BOOL gdi_bitmap_update(rdpContext* context, const BITMAP_UPDATE* bitmapUpdate)
 	UINT32 index;
 
 	if (!context || !bitmapUpdate || !context->gdi || !context->codecs)
+	{
+		WLog_ERR(TAG,
+		         "Invalid arguments: context=%p, bitmapUpdate=%p, context->gdi=%p, "
+		         "context->codecs=%p",
+		         context, bitmapUpdate, context->gdi, context->codecs);
 		return FALSE;
+	}
 
 	for (index = 0; index < bitmapUpdate->number; index++)
 	{
@@ -479,7 +486,10 @@ BOOL gdi_bitmap_update(rdpContext* context, const BITMAP_UPDATE* bitmapUpdate)
 		rdpBitmap* bmp = Bitmap_Alloc(context);
 
 		if (!bmp)
+		{
+			WLog_ERR(TAG, "Bitmap_Alloc failed");
 			return FALSE;
+		}
 
 		Bitmap_SetDimensions(bmp, bitmap->width, bitmap->height);
 		Bitmap_SetRectangle(bmp, bitmap->destLeft, bitmap->destTop, bitmap->destRight,
@@ -489,18 +499,21 @@ BOOL gdi_bitmap_update(rdpContext* context, const BITMAP_UPDATE* bitmapUpdate)
 		                     bitmap->bitsPerPixel, bitmap->bitmapLength, bitmap->compressed,
 		                     RDP_CODEC_ID_NONE))
 		{
+			WLog_ERR(TAG, "bmp->Decompress failed");
 			Bitmap_Free(context, bmp);
 			return FALSE;
 		}
 
 		if (!bmp->New(context, bmp))
 		{
+			WLog_ERR(TAG, "bmp->New failed");
 			Bitmap_Free(context, bmp);
 			return FALSE;
 		}
 
 		if (!bmp->Paint(context, bmp))
 		{
+			WLog_ERR(TAG, "bmp->Paint failed");
 			Bitmap_Free(context, bmp);
 			return FALSE;
 		}
@@ -949,25 +962,25 @@ out_fail:
 
 static BOOL gdi_polygon_sc(rdpContext* context, const POLYGON_SC_ORDER* polygon_sc)
 {
-	WLog_WARN(TAG, "%s: not implemented", __FUNCTION__);
+	WLog_WARN(TAG, "not implemented");
 	return FALSE;
 }
 
 static BOOL gdi_polygon_cb(rdpContext* context, POLYGON_CB_ORDER* polygon_cb)
 {
-	WLog_WARN(TAG, "%s: not implemented", __FUNCTION__);
+	WLog_WARN(TAG, "not implemented");
 	return FALSE;
 }
 
 static BOOL gdi_ellipse_sc(rdpContext* context, const ELLIPSE_SC_ORDER* ellipse_sc)
 {
-	WLog_WARN(TAG, "%s: not implemented", __FUNCTION__);
+	WLog_WARN(TAG, "not implemented");
 	return FALSE;
 }
 
 static BOOL gdi_ellipse_cb(rdpContext* context, const ELLIPSE_CB_ORDER* ellipse_cb)
 {
-	WLog_WARN(TAG, "%s: not implemented", __FUNCTION__);
+	WLog_WARN(TAG, "not implemented");
 	return FALSE;
 }
 
@@ -1268,14 +1281,27 @@ BOOL gdi_resize_ex(rdpGdi* gdi, UINT32 width, UINT32 height, UINT32 stride, UINT
 
 /**
  * Initialize GDI
- * @param inst current instance
- * @return
+ *
+ * @param instance A pointer to the instance to use
+ * @param format The color format for the local framebuffer
+ * @return \b TRUE for success, \b FALSE for failure
  */
 BOOL gdi_init(freerdp* instance, UINT32 format)
 {
 	return gdi_init_ex(instance, format, 0, NULL, winpr_aligned_free);
 }
 
+/**
+ * Initialize GDI
+ *
+ * @param instance A pointer to the instance to use
+ * @param format The color format for the local framebuffer
+ * @param stride The size of a framebuffer line in bytes
+ * @param buffer A pointer to a buffer to be used as framebuffer
+ * @param pfree A custom function pointer to use to free the framebuffer
+ *
+ * @return \b TRUE for success, \b FALSE for failure
+ */
 BOOL gdi_init_ex(freerdp* instance, UINT32 format, UINT32 stride, BYTE* buffer,
                  void (*pfree)(void*))
 {

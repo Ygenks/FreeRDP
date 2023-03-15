@@ -55,6 +55,7 @@
 #include "xf_rail.h"
 #include "xf_input.h"
 #include "xf_keyboard.h"
+#include "xf_utils.h"
 
 #define TAG CLIENT_TAG("x11")
 
@@ -110,12 +111,15 @@ typedef struct
 
 static void xf_SetWindowTitleText(xfContext* xfc, Window window, const char* name)
 {
+	WINPR_ASSERT(xfc);
+	WINPR_ASSERT(name);
+
 	const size_t i = strnlen(name, MAX_PATH);
 	XStoreName(xfc->display, window, name);
 	Atom wm_Name = xfc->_NET_WM_NAME;
 	Atom utf8Str = xfc->UTF8_STRING;
-	XChangeProperty(xfc->display, window, wm_Name, utf8Str, 8, PropModeReplace,
-	                (const unsigned char*)name, (int)i);
+	LogTagAndXChangeProperty(TAG, xfc->display, window, wm_Name, utf8Str, 8, PropModeReplace,
+	                         (const unsigned char*)name, (int)i);
 }
 
 /**
@@ -358,8 +362,9 @@ BOOL xf_GetWindowProperty(xfContext* xfc, Window window, Atom property, int leng
 	if (property == None)
 		return FALSE;
 
-	status = XGetWindowProperty(xfc->display, window, property, 0, length, False, AnyPropertyType,
-	                            &actual_type, &actual_format, nitems, bytes, prop);
+	status = LogTagAndXGetWindowProperty(TAG, xfc->display, window, property, 0, length, False,
+	                                     AnyPropertyType, &actual_type, &actual_format, nitems,
+	                                     bytes, prop);
 
 	if (status != Success)
 		return FALSE;
@@ -425,35 +430,35 @@ BOOL xf_GetWorkArea(xfContext* xfc)
 
 void xf_SetWindowDecorations(xfContext* xfc, Window window, BOOL show)
 {
-	PropMotifWmHints hints;
-	hints.decorations = (show) ? MWM_DECOR_ALL : 0;
-	hints.functions = MWM_FUNC_ALL;
-	hints.flags = MWM_HINTS_DECORATIONS | MWM_HINTS_FUNCTIONS;
-	hints.inputMode = 0;
-	hints.status = 0;
-	XChangeProperty(xfc->display, window, xfc->_MOTIF_WM_HINTS, xfc->_MOTIF_WM_HINTS, 32,
-	                PropModeReplace, (BYTE*)&hints, PROP_MOTIF_WM_HINTS_ELEMENTS);
+	PropMotifWmHints hints = { .decorations = (show) ? MWM_DECOR_ALL : 0,
+		                       .functions = MWM_FUNC_ALL,
+		                       .flags = MWM_HINTS_DECORATIONS | MWM_HINTS_FUNCTIONS,
+		                       .inputMode = 0,
+		                       .status = 0 };
+	WINPR_ASSERT(xfc);
+	LogTagAndXChangeProperty(TAG, xfc->display, window, xfc->_MOTIF_WM_HINTS, xfc->_MOTIF_WM_HINTS,
+	                         32, PropModeReplace, (BYTE*)&hints, PROP_MOTIF_WM_HINTS_ELEMENTS);
 }
 
 void xf_SetWindowUnlisted(xfContext* xfc, Window window)
 {
-	Atom window_state[2];
-	window_state[0] = xfc->_NET_WM_STATE_SKIP_PAGER;
-	window_state[1] = xfc->_NET_WM_STATE_SKIP_TASKBAR;
-	XChangeProperty(xfc->display, window, xfc->_NET_WM_STATE, XA_ATOM, 32, PropModeReplace,
-	                (BYTE*)&window_state, 2);
+	WINPR_ASSERT(xfc);
+	const Atom window_state[] = { xfc->_NET_WM_STATE_SKIP_PAGER, xfc->_NET_WM_STATE_SKIP_TASKBAR };
+	LogTagAndXChangeProperty(TAG, xfc->display, window, xfc->_NET_WM_STATE, XA_ATOM, 32,
+	                         PropModeReplace, (BYTE*)&window_state, 2);
 }
 
 static void xf_SetWindowPID(xfContext* xfc, Window window, pid_t pid)
 {
 	Atom am_wm_pid;
 
+	WINPR_ASSERT(xfc);
 	if (!pid)
 		pid = getpid();
 
 	am_wm_pid = xfc->_NET_WM_PID;
-	XChangeProperty(xfc->display, window, am_wm_pid, XA_CARDINAL, 32, PropModeReplace, (BYTE*)&pid,
-	                1);
+	LogTagAndXChangeProperty(TAG, xfc->display, window, am_wm_pid, XA_CARDINAL, 32, PropModeReplace,
+	                         (BYTE*)&pid, 1);
 }
 
 static const char* get_shm_id(void)
@@ -465,7 +470,9 @@ static const char* get_shm_id(void)
 
 Window xf_CreateDummyWindow(xfContext* xfc)
 {
-	return XCreateSimpleWindow(xfc->display, DefaultRootWindow(xfc->display), 0, 0, 1, 1, 0, 0, 0);
+	return XCreateWindow(xfc->display, RootWindowOfScreen(xfc->screen), xfc->workArea.x,
+	                     xfc->workArea.y, 1, 1, 0, xfc->depth, InputOutput, xfc->visual,
+	                     xfc->attribs_mask, &xfc->attribs);
 }
 
 void xf_DestroyDummyWindow(xfContext* xfc, Window window)
@@ -496,12 +503,12 @@ xfWindow* xf_CreateDesktopWindow(xfContext* xfc, char* name, int width, int heig
 	window->decorations = xfc->decorations;
 	window->is_mapped = FALSE;
 	window->is_transient = FALSE;
-	window->handle = XCreateWindow(xfc->display, RootWindowOfScreen(xfc->screen), xfc->workArea.x,
-	                               xfc->workArea.y, xfc->workArea.width, xfc->workArea.height, 0,
-	                               xfc->depth, InputOutput, xfc->visual,
-	                               CWBackPixel | CWBackingStore | CWOverrideRedirect | CWColormap |
-	                                   CWBorderPixel | CWWinGravity | CWBitGravity,
-	                               &xfc->attribs);
+
+	WINPR_ASSERT(xfc->depth != 0);
+	window->handle =
+	    XCreateWindow(xfc->display, RootWindowOfScreen(xfc->screen), xfc->workArea.x,
+	                  xfc->workArea.y, xfc->workArea.width, xfc->workArea.height, 0, xfc->depth,
+	                  InputOutput, xfc->visual, xfc->attribs_mask, &xfc->attribs);
 	window->shmid = shm_open(get_shm_id(), (O_CREAT | O_RDWR), (S_IREAD | S_IWRITE));
 
 	if (window->shmid < 0)
@@ -513,7 +520,7 @@ xfWindow* xf_CreateDesktopWindow(xfContext* xfc, char* name, int width, int heig
 		int rc = ftruncate(window->shmid, sizeof(window->handle));
 		if (rc != 0)
 		{
-			DEBUG_X11("%s: ftruncate failed with %s [%d]", __FUNCTION__, strerror(rc), rc);
+			DEBUG_X11("ftruncate failed with %s [%d]", strerror(rc), rc);
 		}
 		else
 		{
@@ -559,8 +566,8 @@ xfWindow* xf_CreateDesktopWindow(xfContext* xfc, char* name, int width, int heig
 	if (xfc->grab_keyboard)
 		input_mask |= EnterWindowMask | LeaveWindowMask;
 
-	XChangeProperty(xfc->display, window->handle, xfc->_NET_WM_ICON, XA_CARDINAL, 32,
-	                PropModeReplace, (BYTE*)xf_icon_prop, ARRAYSIZE(xf_icon_prop));
+	LogTagAndXChangeProperty(TAG, xfc->display, window->handle, xfc->_NET_WM_ICON, XA_CARDINAL, 32,
+	                         PropModeReplace, (BYTE*)xf_icon_prop, ARRAYSIZE(xf_icon_prop));
 
 	if (parentWindow)
 		XReparentWindow(xfc->display, window->handle, parentWindow, 0, 0);
@@ -718,8 +725,8 @@ void xf_SetWindowStyle(xfContext* xfc, xfAppWindow* appWindow, UINT32 style, UIN
 		XChangeWindowAttributes(xfc->display, appWindow->handle, CWOverrideRedirect, &attrs);
 	}
 
-	XChangeProperty(xfc->display, appWindow->handle, xfc->_NET_WM_WINDOW_TYPE, XA_ATOM, 32,
-	                PropModeReplace, (BYTE*)&window_type, 1);
+	LogTagAndXChangeProperty(TAG, xfc->display, appWindow->handle, xfc->_NET_WM_WINDOW_TYPE,
+	                         XA_ATOM, 32, PropModeReplace, (BYTE*)&window_type, 1);
 }
 
 void xf_SetWindowText(xfContext* xfc, xfAppWindow* appWindow, const char* name)
@@ -811,9 +818,12 @@ BOOL xf_AppWindowCreate(xfContext* xfc, xfAppWindow* appWindow)
 	appWindow->maxHorz = FALSE;
 	appWindow->minimized = FALSE;
 	appWindow->rail_ignore_configure = FALSE;
-	appWindow->handle = XCreateWindow(xfc->display, RootWindowOfScreen(xfc->screen), appWindow->x,
-	                                  appWindow->y, appWindow->width, appWindow->height, 0,
-	                                  xfc->depth, InputOutput, xfc->visual, 0, &xfc->attribs);
+
+	WINPR_ASSERT(xfc->depth != 0);
+	appWindow->handle =
+	    XCreateWindow(xfc->display, RootWindowOfScreen(xfc->screen), appWindow->x, appWindow->y,
+	                  appWindow->width, appWindow->height, 0, xfc->depth, InputOutput, xfc->visual,
+	                  xfc->attribs_mask, &xfc->attribs);
 
 	if (!appWindow->handle)
 		return FALSE;
@@ -1218,8 +1228,7 @@ UINT xf_AppUpdateWindowFromSurface(xfContext* xfc, gdiGfxSurface* surface)
 	xfAppWindow* appWindow = xf_rail_get_window(xfc, surface->windowId);
 	if (!appWindow)
 	{
-		WLog_VRB(TAG, "[%s] Failed to find a window for id=0x%08" PRIx64, __func__,
-		         surface->windowId);
+		WLog_VRB(TAG, "Failed to find a window for id=0x%08" PRIx64, surface->windowId);
 		return CHANNEL_RC_OK;
 	}
 
@@ -1242,15 +1251,16 @@ UINT xf_AppUpdateWindowFromSurface(xfContext* xfc, gdiGfxSurface* surface)
 
 		if (!appWindow->image)
 		{
-			appWindow->image =
-			    XCreateImage(xfc->display, xfc->visual, xfc->depth, ZPixmap, 0, surface->data,
-			                 surface->width, surface->height, xfc->scanline_pad, surface->scanline);
+			WINPR_ASSERT(xfc->depth != 0);
+			appWindow->image = XCreateImage(xfc->display, xfc->visual, xfc->depth, ZPixmap, 0,
+			                                (char*)surface->data, surface->width, surface->height,
+			                                xfc->scanline_pad, surface->scanline);
 			if (!appWindow->image)
 			{
 				WLog_WARN(TAG,
-				          "[%s] Failed create a XImage[%" PRIu32 "x%" PRIu32 ", scanline=%" PRIu32
+				          "Failed create a XImage[%" PRIu32 "x%" PRIu32 ", scanline=%" PRIu32
 				          ", bpp=%" PRIu32 "] for window id=0x%08" PRIx64,
-				          __func__, surface->width, surface->height, surface->scanline, xfc->depth,
+				          surface->width, surface->height, surface->scanline, xfc->depth,
 				          surface->windowId);
 				goto fail;
 			}
@@ -1293,6 +1303,8 @@ BOOL xf_AppWindowResize(xfContext* xfc, xfAppWindow* appWindow)
 
 	if (appWindow->pixmap != 0)
 		XFreePixmap(xfc->display, appWindow->pixmap);
+
+	WINPR_ASSERT(xfc->depth != 0);
 	appWindow->pixmap =
 	    XCreatePixmap(xfc->display, xfc->drawable, appWindow->width, appWindow->height, xfc->depth);
 	xf_AppWindowDestroyImage(appWindow);

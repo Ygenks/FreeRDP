@@ -29,7 +29,6 @@ typedef struct rdp_nla rdpNla;
 #include <winpr/stream.h>
 #include <winpr/crypto.h>
 
-#include <freerdp/crypto/tls.h>
 #include <freerdp/crypto/ber.h>
 #include <freerdp/crypto/der.h>
 #include <freerdp/crypto/crypto.h>
@@ -58,6 +57,7 @@ FREERDP_LOCAL BOOL nla_set_state(rdpNla* nla, NLA_STATE state);
 FREERDP_LOCAL const char* nla_get_state_str(NLA_STATE state);
 
 FREERDP_LOCAL DWORD nla_get_error(rdpNla* nla);
+FREERDP_LOCAL UINT32 nla_get_sspi_error(rdpNla* nla);
 
 FREERDP_LOCAL BOOL nla_set_service_principal(rdpNla* nla, const char* service,
                                              const char* hostname);

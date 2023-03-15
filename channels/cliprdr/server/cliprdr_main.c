@@ -26,6 +26,7 @@
 #include <winpr/print.h>
 #include <winpr/stream.h>
 
+#include <freerdp/freerdp.h>
 #include <freerdp/channels/log.h>
 #include "cliprdr_main.h"
 #include "../cliprdr_common.h"
@@ -78,7 +79,7 @@
 static UINT cliprdr_server_packet_send(CliprdrServerPrivate* cliprdr, wStream* s)
 {
 	UINT rc;
-	size_t pos, size;
+	size_t pos;
 	BOOL status;
 	UINT32 dataLen;
 	ULONG written;
@@ -95,15 +96,13 @@ static UINT cliprdr_server_packet_send(CliprdrServerPrivate* cliprdr, wStream* s
 	dataLen = (UINT32)(pos - 8);
 	Stream_SetPosition(s, 4);
 	Stream_Write_UINT32(s, dataLen);
-	Stream_SetPosition(s, pos);
-	size = Stream_Length(s);
-	if (size > UINT32_MAX)
+	if (pos > UINT32_MAX)
 	{
 		rc = ERROR_INVALID_DATA;
 		goto fail;
 	}
 
-	status = WTSVirtualChannelWrite(cliprdr->ChannelHandle, (PCHAR)Stream_Buffer(s), (UINT32)size,
+	status = WTSVirtualChannelWrite(cliprdr->ChannelHandle, (PCHAR)Stream_Buffer(s), (UINT32)pos,
 	                                &written);
 	rc = status ? CHANNEL_RC_OK : ERROR_INTERNAL_ERROR;
 fail:
@@ -130,8 +129,7 @@ static UINT cliprdr_server_capabilities(CliprdrServerContext* context,
 	cliprdr = (CliprdrServerPrivate*)context->handle;
 
 	if (capabilities->common.msgType != CB_CLIP_CAPS)
-		WLog_WARN(TAG, "[%s] called with invalid type %08" PRIx32, __FUNCTION__,
-		          capabilities->common.msgType);
+		WLog_WARN(TAG, "called with invalid type %08" PRIx32, capabilities->common.msgType);
 
 	if (capabilities->cCapabilitiesSets > UINT16_MAX)
 	{
@@ -176,7 +174,7 @@ static UINT cliprdr_server_capabilities(CliprdrServerContext* context,
 				WLog_WARN(TAG, "Unknown capability set type %08" PRIx16, cap->capabilitySetType);
 				if (!Stream_SafeSeek(s, cap->capabilitySetLength))
 				{
-					WLog_ERR(TAG, "%s: short stream", __FUNCTION__);
+					WLog_ERR(TAG, "short stream");
 					return ERROR_NO_DATA;
 				}
 				break;
@@ -203,8 +201,7 @@ static UINT cliprdr_server_monitor_ready(CliprdrServerContext* context,
 	cliprdr = (CliprdrServerPrivate*)context->handle;
 
 	if (monitorReady->common.msgType != CB_MONITOR_READY)
-		WLog_WARN(TAG, "[%s] called with invalid type %08" PRIx32, __FUNCTION__,
-		          monitorReady->common.msgType);
+		WLog_WARN(TAG, "called with invalid type %08" PRIx32, monitorReady->common.msgType);
 
 	s = cliprdr_packet_new(CB_MONITOR_READY, monitorReady->common.msgFlags,
 	                       monitorReady->common.dataLen);
@@ -263,8 +260,7 @@ cliprdr_server_format_list_response(CliprdrServerContext* context,
 
 	cliprdr = (CliprdrServerPrivate*)context->handle;
 	if (formatListResponse->common.msgType != CB_FORMAT_LIST_RESPONSE)
-		WLog_WARN(TAG, "[%s] called with invalid type %08" PRIx32, __FUNCTION__,
-		          formatListResponse->common.msgType);
+		WLog_WARN(TAG, "called with invalid type %08" PRIx32, formatListResponse->common.msgType);
 
 	s = cliprdr_packet_new(CB_FORMAT_LIST_RESPONSE, formatListResponse->common.msgFlags,
 	                       formatListResponse->common.dataLen);
@@ -295,8 +291,7 @@ static UINT cliprdr_server_lock_clipboard_data(CliprdrServerContext* context,
 
 	cliprdr = (CliprdrServerPrivate*)context->handle;
 	if (lockClipboardData->common.msgType != CB_LOCK_CLIPDATA)
-		WLog_WARN(TAG, "[%s] called with invalid type %08" PRIx32, __FUNCTION__,
-		          lockClipboardData->common.msgType);
+		WLog_WARN(TAG, "called with invalid type %08" PRIx32, lockClipboardData->common.msgType);
 
 	s = cliprdr_packet_lock_clipdata_new(lockClipboardData);
 	if (!s)
@@ -327,8 +322,7 @@ cliprdr_server_unlock_clipboard_data(CliprdrServerContext* context,
 
 	cliprdr = (CliprdrServerPrivate*)context->handle;
 	if (unlockClipboardData->common.msgType != CB_UNLOCK_CLIPDATA)
-		WLog_WARN(TAG, "[%s] called with invalid type %08" PRIx32, __FUNCTION__,
-		          unlockClipboardData->common.msgType);
+		WLog_WARN(TAG, "called with invalid type %08" PRIx32, unlockClipboardData->common.msgType);
 
 	s = cliprdr_packet_unlock_clipdata_new(unlockClipboardData);
 
@@ -359,8 +353,7 @@ static UINT cliprdr_server_format_data_request(CliprdrServerContext* context,
 
 	cliprdr = (CliprdrServerPrivate*)context->handle;
 	if (formatDataRequest->common.msgType != CB_FORMAT_DATA_REQUEST)
-		WLog_WARN(TAG, "[%s] called with invalid type %08" PRIx32, __FUNCTION__,
-		          formatDataRequest->common.msgType);
+		WLog_WARN(TAG, "called with invalid type %08" PRIx32, formatDataRequest->common.msgType);
 
 	s = cliprdr_packet_new(CB_FORMAT_DATA_REQUEST, formatDataRequest->common.msgFlags,
 	                       formatDataRequest->common.dataLen);
@@ -394,8 +387,7 @@ cliprdr_server_format_data_response(CliprdrServerContext* context,
 	cliprdr = (CliprdrServerPrivate*)context->handle;
 
 	if (formatDataResponse->common.msgType != CB_FORMAT_DATA_RESPONSE)
-		WLog_WARN(TAG, "[%s] called with invalid type %08" PRIx32, __FUNCTION__,
-		          formatDataResponse->common.msgType);
+		WLog_WARN(TAG, "called with invalid type %08" PRIx32, formatDataResponse->common.msgType);
 
 	s = cliprdr_packet_new(CB_FORMAT_DATA_RESPONSE, formatDataResponse->common.msgFlags,
 	                       formatDataResponse->common.dataLen);
@@ -429,8 +421,7 @@ cliprdr_server_file_contents_request(CliprdrServerContext* context,
 	cliprdr = (CliprdrServerPrivate*)context->handle;
 
 	if (fileContentsRequest->common.msgType != CB_FILECONTENTS_REQUEST)
-		WLog_WARN(TAG, "[%s] called with invalid type %08" PRIx32, __FUNCTION__,
-		          fileContentsRequest->common.msgType);
+		WLog_WARN(TAG, "called with invalid type %08" PRIx32, fileContentsRequest->common.msgType);
 
 	s = cliprdr_packet_file_contents_request_new(fileContentsRequest);
 	if (!s)
@@ -462,8 +453,7 @@ cliprdr_server_file_contents_response(CliprdrServerContext* context,
 	cliprdr = (CliprdrServerPrivate*)context->handle;
 
 	if (fileContentsResponse->common.msgType != CB_FILECONTENTS_RESPONSE)
-		WLog_WARN(TAG, "[%s] called with invalid type %08" PRIx32, __FUNCTION__,
-		          fileContentsResponse->common.msgType);
+		WLog_WARN(TAG, "called with invalid type %08" PRIx32, fileContentsResponse->common.msgType);
 
 	s = cliprdr_packet_file_contents_response_new(fileContentsResponse);
 	if (!s)
@@ -629,10 +619,9 @@ static UINT cliprdr_server_receive_temporary_directory(CliprdrServerContext* con
 		return ERROR_INVALID_DATA;
 	}
 
-	memset(cliprdr->temporaryDirectory, 0, ARRAYSIZE(cliprdr->temporaryDirectory));
-
-	if (ConvertFromUnicode(CP_UTF8, 0, wszTempDir, -1, &(cliprdr->temporaryDirectory),
-	                       ARRAYSIZE(cliprdr->temporaryDirectory), NULL, NULL) < 1)
+	if (ConvertWCharNToUtf8(wszTempDir, ARRAYSIZE(cliprdr->temporaryDirectory),
+	                        cliprdr->temporaryDirectory,
+	                        ARRAYSIZE(cliprdr->temporaryDirectory)) < 0)
 	{
 		WLog_ERR(TAG, "failed to convert temporary directory name");
 		return ERROR_INVALID_DATA;

@@ -18,19 +18,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 3.9)
+cmake_minimum_required(VERSION 3.13)
 
 project(FreeRDP C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
-
-include(CheckIPOSupported)
-check_ipo_supported(RESULT supported OUTPUT error)
-if (supported)
-	set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
-endif()
 
 if(NOT DEFINED VENDOR)
 	set(VENDOR "FreeRDP" CACHE STRING "FreeRDP package vendor")
@@ -75,7 +69,6 @@ include(TestBigEndian)
 include(FindFeature)
 include(ShowCMakeVars)
 include(ConfigOptions)
-include(ComplexLibrary)
 include(FeatureSummary)
 include(CheckCCompilerFlag)
 include(GNUInstallDirsWrapper)
@@ -83,6 +76,12 @@ include(CMakePackageConfigHelpers)
 include(InstallFreeRDPMan)
 include(GetGitRevisionDescription)
 include(SetFreeRDPCMakeInstallDir)
+
+include(CheckIPOSupported)
+check_ipo_supported(RESULT supported OUTPUT error)
+if (supported)
+	option(CMAKE_INTERPROCEDURAL_OPTIMIZATION "Enable LTO linking" TRUE)
+endif()
 
 # Soname versioning
 set(BUILD_NUMBER 0)
@@ -303,7 +302,7 @@ if (CMAKE_GENERATOR MATCHES "Unix Makefile*")
 		string(TOUPPER ${CMAKE_BUILD_TYPE} UPPER_BUILD_TYPE)
 		CHECK_C_COMPILER_FLAG (-Wno-builtin-macro-redefined Wno-builtin-macro-redefined)
 		if(Wno-builtin-macro-redefined)
-			set(CMAKE_C_FLAGS_${UPPER_BUILD_TYPE} "${CMAKE_C_FLAGS_${UPPER_BUILD_TYPE}} -Wno-builtin-macro-redefined -D__FILE__='\"$(subst ${PROJCET_BINARY_DIR}/,,$(subst ${PROJECT_SOURCE_DIR}/,,$(abspath $<)))\"'")
+			set(CMAKE_C_FLAGS_${UPPER_BUILD_TYPE} "${CMAKE_C_FLAGS_${UPPER_BUILD_TYPE}} -Wno-builtin-macro-redefined -D__FILE__='\"$(subst ${PROJECT_BINARY_DIR}/,,$(subst ${PROJECT_SOURCE_DIR}/,,$(abspath $<)))\"'")
 		endif()
 	endif()
 endif()
@@ -550,9 +549,9 @@ if(ANDROID)
 endif()
 
 if(WITH_VALGRIND_MEMCHECK)
-	check_include_files(valgrind/memcheck.h HAVE_VALGRIND_MEMCHECK_H)
+    check_include_files(valgrind/memcheck.h FREERDP_HAVE_VALGRIND_MEMCHECK_H)
 else()
-	unset(HAVE_VALGRIND_MEMCHECK_H CACHE)
+    unset(FREERDP_HAVE_VALGRIND_MEMCHECK_H CACHE)
 endif()
 
 if(UNIX OR CYGWIN)
@@ -613,6 +612,10 @@ set(PCSC_FEATURE_TYPE "RECOMMENDED")
 set(PCSC_FEATURE_PURPOSE "smart card")
 set(PCSC_FEATURE_DESCRIPTION "smart card device redirection")
 
+set(CJSON_FEATURE_TYPE "RECOMMENDED")
+set(CJSON_FEATURE_PURPOSE "JSON")
+set(CJSON_FEATURE_DESCRIPTION "Azure AD, RDS AAD authentication")
+
 set(FFMPEG_FEATURE_TYPE "RECOMMENDED")
 set(FFMPEG_FEATURE_PURPOSE "multimedia")
 set(FFMPEG_FEATURE_DESCRIPTION "multimedia redirection, audio and video playback")
@@ -657,10 +660,6 @@ set(SOXR_FEATURE_TYPE "OPTIONAL")
 set(SOXR_FEATURE_PURPOSE "codec")
 set(SOXR_FEATURE_DESCRIPTION "SOX audio resample library")
 
-set(GSSAPI_FEATURE_TYPE "OPTIONAL")
-set(GSSAPI_FEATURE_PURPOSE "auth")
-set(GSSAPI_FEATURE_DESCRIPTION "add kerberos support")
-
 if(WIN32)
 	set(X11_FEATURE_TYPE "DISABLED")
 	set(WAYLAND_FEATURE_TYPE "DISABLED")
@@ -702,9 +701,9 @@ if(UNIX AND NOT ANDROID)
 	find_feature(libsystemd ${WLOG_SYSTEMD_JOURNAL_FEATURE_TYPE} ${WLOG_SYSTEMD_JOURNAL_FEATURE_PURPOSE} ${WLOG_SYSTEMD_JOURNAL_FEATURE_DESCRIPTION})
 
 	if(LIBSYSTEMD_FOUND)
-		set(HAVE_JOURNALD_H TRUE)
+        set(WINPR_HAVE_JOURNALD_H TRUE)
 	else()
-		unset(HAVE_JOURNALD_H)
+        unset(WINPR_HAVE_JOURNALD_H)
 	endif()
 endif(UNIX AND NOT ANDROID)
 
@@ -736,6 +735,8 @@ find_feature(Pulse ${PULSE_FEATURE_TYPE} ${PULSE_FEATURE_PURPOSE} ${PULSE_FEATUR
 find_feature(Cups ${CUPS_FEATURE_TYPE} ${CUPS_FEATURE_PURPOSE} ${CUPS_FEATURE_DESCRIPTION})
 find_feature(PCSC ${PCSC_FEATURE_TYPE} ${PCSC_FEATURE_PURPOSE} ${PCSC_FEATURE_DESCRIPTION})
 
+find_feature(CJSON ${CJSON_FEATURE_TYPE} ${CJSON_FEATURE_PURPOSE} ${CJSON_FEATURE_DESCRIPTION})
+
 if (WITH_DSP_FFMPEG OR WITH_VIDEO_FFMPEG OR WITH_FFMPEG)
 	set(FFMPEG_FEATURE_TYPE "REQUIRED" )
 endif()
@@ -750,7 +751,6 @@ find_feature(LAME ${LAME_FEATURE_TYPE} ${LAME_FEATURE_PURPOSE} ${LAME_FEATURE_DE
 find_feature(FAAD2 ${FAAD2_FEATURE_TYPE} ${FAAD2_FEATURE_PURPOSE} ${FAAD2_FEATURE_DESCRIPTION})
 find_feature(FAAC ${FAAC_FEATURE_TYPE} ${FAAC_FEATURE_PURPOSE} ${FAAC_FEATURE_DESCRIPTION})
 find_feature(soxr ${SOXR_FEATURE_TYPE} ${SOXR_FEATURE_PURPOSE} ${SOXR_FEATURE_DESCRIPTION})
-find_feature(GSSAPI ${GSSAPI_FEATURE_TYPE} ${GSSAPI_FEATURE_PURPOSE} ${GSSAPI_FEATURE_DESCRIPTION})
 
 if (WITH_OPENH264 AND NOT WITH_OPENH264_LOADING)
 	option(WITH_OPENH264_LOADING "Use LoadLibrary to load openh264 at runtime" OFF)
@@ -804,9 +804,7 @@ if(OPENSSL_FOUND)
 	add_definitions("-DWITH_OPENSSL")
 	message(STATUS "Using OpenSSL Version: ${OPENSSL_VERSION}")
 	include_directories(${OPENSSL_INCLUDE_DIR})
-endif()
-
-if(MBEDTLS_FOUND)
+elseif(MBEDTLS_FOUND)
 	add_definitions("-DWITH_MBEDTLS")
 endif()
 
@@ -976,7 +974,7 @@ endif()
 set(FREERDP_BUILD_CONFIG_LIST "")
 GET_CMAKE_PROPERTY(res VARIABLES)
 FOREACH(var ${res})
-		IF (var MATCHES "^WITH_*|^BUILD_TESTING|^HAVE_*")
+    IF (var MATCHES "^WITH_*|^BUILD_TESTING|^WINPR_HAVE_*")
 				LIST(APPEND FREERDP_BUILD_CONFIG_LIST "${var}=${${var}}")
 		ENDIF()
 ENDFOREACH()

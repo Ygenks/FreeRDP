@@ -6,10 +6,13 @@ OPENSSL_TAG=openssl-1.1.1s
 OPENSSL_HASH=c5ac01e760ee6ff0dab61d6b2bbd30146724d063eb322180c6f18a6f74e4b6aa
 FFMPEG_TAG=n4.4.1
 FFMPEG_HASH=82b43cc67296bcd01a59ae6b327cdb50121d3a9e35f41a30de1edd71bb4a6666
+CJSON_TAG=v1.7.15
+CJSON_HASH=d348621ca93571343a56862df7de4ff3bc9b5667
 
 WITH_OPENH264=0
 WITH_OPENSSL=0
 WITH_FFMPEG=0
+WITH_CJSON=0
 
 SRC_DIR=$(dirname "${BASH_SOURCE[0]}")
 SRC_DIR=$(realpath "$SRC_DIR")
@@ -46,6 +49,10 @@ do
 			WITH_FFMPEG=1
 			shift
 			;;
+		--cjson)
+			WITH_CJSON=1
+			shift
+			;;
 		--openssl)
 			WITH_OPENSSL=1
 			shift
@@ -76,8 +83,8 @@ common_parse_arguments $REMAINING
 
 if [ -z ${WITH_MEDIACODEC+x} ];
 then
-    common_run echo "WITH_MEDIACODEC unset, defining WITH_MEDIACODEC=1"
-    WITH_MEDIACODEC=1
+	common_run echo "WITH_MEDIACODEC unset, defining WITH_MEDIACODEC=1"
+	WITH_MEDIACODEC=1
 fi
 
 # clean up top
@@ -99,91 +106,109 @@ CMAKE_CMD_ARGS="-DANDROID_NDK=$ANDROID_NDK \
 	-DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
 	-DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
 	-DFREERDP_EXTERNAL_PATH=$BUILD_DST \
+	-DWITH_CLIENT_SDL=OFF \
 	-DCMAKE_MAKE_PROGRAM=make"
 
 BASE=$(pwd)
 for ARCH in $BUILD_ARCH
 do
-    # build dependencies.
-    if [ $WITH_OPENH264 -ne 0 ];
-    then
-        if [ -z "$ANDROID_NDK_OPENH264" ]
-        then
-            echo
-            echo "Warning: Missing openh264-ndk, using $ANDROID_NDK" >&2
-            echo
-            ANDROID_NDK_OPENH264=$ANDROID_NDK
-        fi
-        if [ $BUILD_DEPS -ne 0 ];
-        then
-            common_run bash $SCRIPT_PATH/android-build-openh264.sh \
-                --src $BUILD_SRC/openh264 --dst $BUILD_DST \
-                --sdk "$ANDROID_SDK" \
-                --ndk "$ANDROID_NDK_OPENH264" \
-                --arch $ARCH \
-                --target $NDK_TARGET \
-                --tag $OPENH264_TAG \
+	# build dependencies.
+	if [ $WITH_OPENH264 -ne 0 ];
+	then
+		if [ -z "$ANDROID_NDK_OPENH264" ]
+		then
+			echo
+			echo "Warning: Missing openh264-ndk, using $ANDROID_NDK" >&2
+			echo
+			ANDROID_NDK_OPENH264=$ANDROID_NDK
+		fi
+		if [ $BUILD_DEPS -ne 0 ];
+		then
+			common_run bash $SCRIPT_PATH/android-build-openh264.sh \
+				--src $BUILD_SRC/openh264 --dst $BUILD_DST \
+				--sdk "$ANDROID_SDK" \
+				--ndk "$ANDROID_NDK_OPENH264" \
+				--arch $ARCH \
+				--target $NDK_TARGET \
+				--tag $OPENH264_TAG \
 								--hash $OPENH264_HASH
-        fi
-        CMAKE_CMD_ARGS="$CMAKE_CMD_ARGS -DWITH_OPENH264=ON"
-    else
-        CMAKE_CMD_ARGS="$CMAKE_CMD_ARGS -DWITH_OPENH264=OFF"
-    fi
+		fi
+		CMAKE_CMD_ARGS="$CMAKE_CMD_ARGS -DWITH_OPENH264=ON"
+	else
+		CMAKE_CMD_ARGS="$CMAKE_CMD_ARGS -DWITH_OPENH264=OFF"
+	fi
 
-    if [ $WITH_MEDIACODEC -ne 0 ];
-    then
-        CMAKE_CMD_ARGS="$CMAKE_CMD_ARGS -DWITH_MEDIACODEC=ON"
-    else
-        CMAKE_CMD_ARGS="$CMAKE_CMD_ARGS -DWITH_MEDIACODEC=OFF"
-    fi
+	if [ $WITH_MEDIACODEC -ne 0 ];
+	then
+		CMAKE_CMD_ARGS="$CMAKE_CMD_ARGS -DWITH_MEDIACODEC=ON"
+	else
+		CMAKE_CMD_ARGS="$CMAKE_CMD_ARGS -DWITH_MEDIACODEC=OFF"
+	fi
 
 	if [ $WITH_FFMPEG -ne 0 ];
-    then
+	then
 		if [ $BUILD_DEPS -ne 0 ];
-        then
-            common_run bash $SCRIPT_PATH/android-build-ffmpeg.sh \
-                --src $BUILD_SRC/ffmpeg --dst $BUILD_DST \
-                --sdk "$ANDROID_SDK" \
-                --ndk "$ANDROID_NDK" \
-                --arch $ARCH \
-                --target $NDK_TARGET \
-                --tag $FFMPEG_TAG \
-                --hash $FFMPEG_HASH
-        fi
+		then
+			common_run bash $SCRIPT_PATH/android-build-ffmpeg.sh \
+				--src $BUILD_SRC/ffmpeg --dst $BUILD_DST \
+				--sdk "$ANDROID_SDK" \
+				--ndk "$ANDROID_NDK" \
+				--arch $ARCH \
+				--target $NDK_TARGET \
+				--tag $FFMPEG_TAG \
+				--hash $FFMPEG_HASH
+		fi
 		CMAKE_CMD_ARGS="$CMAKE_CMD_ARGS -DWITH_FFMPEG=ON -DWITH_SWCALE=ON"
 	else
-        CMAKE_CMD_ARGS="$CMAKE_CMD_ARGS -DWITH_FFMPEG=OFF"
-    fi
-    if [ $WITH_OPENSSL -ne 0 ];
-    then
-        if [ $BUILD_DEPS -ne 0 ];
-        then
-            common_run bash $SCRIPT_PATH/android-build-openssl.sh \
-                --src $BUILD_SRC/openssl --dst $BUILD_DST \
-                --sdk "$ANDROID_SDK" \
-                --ndk $ANDROID_NDK \
-                --arch $ARCH \
-								--target $NDK_TARGET \
-                --tag $OPENSSL_TAG \
-                --hash $OPENSSL_HASH
-        fi
-    fi
+		CMAKE_CMD_ARGS="$CMAKE_CMD_ARGS -DWITH_FFMPEG=OFF"
+	fi
+	if [ $WITH_CJSON -ne 0 ];
+	then
+		if [ $BUILD_DEPS -ne 0 ];
+		then
+			common_run bash $SCRIPT_PATH/android-build-cjson.sh \
+				--src $BUILD_SRC/cjson --dst $BUILD_DST \
+				--sdk "$ANDROID_SDK" \
+				--ndk "$ANDROID_NDK" \
+				--arch $ARCH \
+				--target $NDK_TARGET \
+				--tag $CJSON_TAG \
+				--hash $CJSON_HASH
+		fi
+	fi
+	if [ $WITH_OPENSSL -ne 0 ];
+	then
+		if [ $BUILD_DEPS -ne 0 ];
+		then
+			common_run bash $SCRIPT_PATH/android-build-openssl.sh \
+				--src $BUILD_SRC/openssl --dst $BUILD_DST \
+				--sdk "$ANDROID_SDK" \
+				--ndk $ANDROID_NDK \
+				--arch $ARCH \
+				--target $NDK_TARGET \
+				--tag $OPENSSL_TAG \
+				--hash $OPENSSL_HASH
+		fi
+	fi
 
-    # Build and install the library.
-    if [ $DEPS_ONLY -eq 0 ];
-    then
-	common_run cd $BASE
-	common_run mkdir -p $BUILD_SRC/freerdp-build/$ARCH
-	common_run cd $BUILD_SRC/freerdp-build/$ARCH
-	common_run export ANDROID_NDK=$ANDROID_NDK
-	common_run $CMAKE_PROGRAM $CMAKE_CMD_ARGS \
-		-DANDROID_ABI=$ARCH \
-		-DCMAKE_INSTALL_PREFIX=$BUILD_DST/$ARCH \
-		-DCMAKE_INSTALL_LIBDIR=. \
-		$SRC_DIR
-	echo $(pwd)
-	common_run cmake --build . --target install
-    fi
+	# Build and install the library.
+	if [ $DEPS_ONLY -eq 0 ];
+	then
+		common_run cd $BASE
+		common_run mkdir -p $BUILD_SRC/freerdp-build/$ARCH
+		common_run cd $BUILD_SRC/freerdp-build/$ARCH
+		common_run export ANDROID_NDK=$ANDROID_NDK
+		common_run $CMAKE_PROGRAM $CMAKE_CMD_ARGS \
+			-DANDROID_ABI=$ARCH \
+			-DCMAKE_INSTALL_PREFIX=$BUILD_DST/$ARCH \
+			-DCMAKE_INSTALL_LIBDIR=. \
+			-DCMAKE_PREFIX_PATH=$BUILD_DST/$ARCH \
+			-DCMAKE_SHARED_LINKER_FLAGS="-L$BUILD_DST/$ARCH" \
+			-DcJSON_DIR=$BUILD_DST/$ARCH/cmake/cJSON \
+			$SRC_DIR
+		echo $(pwd)
+		common_run $CMAKE_PROGRAM --build . --target install
+	fi
 done
 
 echo "Successfully build library for architectures $BUILD_ARCH"

@@ -114,7 +114,7 @@ static SECURITY_STATUS SEC_ENTRY schannel_QueryCredentialsAttributesW(PCredHandl
 		return SEC_E_OK;
 	}
 
-	WLog_ERR(TAG, "[%s]: TODO: Implement ulAttribute=%08" PRIx32, __FUNCTION__, ulAttribute);
+	WLog_ERR(TAG, "TODO: Implement ulAttribute=%08" PRIx32, ulAttribute);
 	return SEC_E_UNSUPPORTED_FUNCTION;
 }
 
@@ -168,8 +168,11 @@ static SECURITY_STATUS SEC_ENTRY schannel_AcquireCredentialsHandleA(
 	SECURITY_STATUS status;
 	SEC_WCHAR* pszPrincipalW = NULL;
 	SEC_WCHAR* pszPackageW = NULL;
-	ConvertToUnicode(CP_UTF8, 0, pszPrincipal, -1, &pszPrincipalW, 0);
-	ConvertToUnicode(CP_UTF8, 0, pszPackage, -1, &pszPackageW, 0);
+	if (pszPrincipal)
+		pszPrincipalW = ConvertUtf8ToWCharAlloc(pszPrincipal, NULL);
+	if (pszPackage)
+		pszPackageW = ConvertUtf8ToWCharAlloc(pszPackage, NULL);
+
 	status = schannel_AcquireCredentialsHandleW(pszPrincipalW, pszPackageW, fCredentialUse,
 	                                            pvLogonID, pAuthData, pGetKeyFn, pvGetKeyArgument,
 	                                            phCredential, ptsExpiry);
@@ -238,7 +241,9 @@ static SECURITY_STATUS SEC_ENTRY schannel_InitializeSecurityContextA(
 
 	if (pszTargetName != NULL)
 	{
-		ConvertToUnicode(CP_UTF8, 0, pszTargetName, -1, &pszTargetNameW, 0);
+		pszTargetNameW = ConvertUtf8ToWCharAlloc(pszTargetName, NULL);
+		if (!pszTargetNameW)
+			return SEC_E_INSUFFICIENT_MEMORY;
 	}
 
 	status = schannel_InitializeSecurityContextW(
@@ -320,7 +325,7 @@ static SECURITY_STATUS SEC_ENTRY schannel_QueryContextAttributes(PCtxtHandle phC
 		return SEC_E_OK;
 	}
 
-	WLog_ERR(TAG, "[%s]: TODO: Implement ulAttribute=%08" PRIx32, __FUNCTION__, ulAttribute);
+	WLog_ERR(TAG, "TODO: Implement ulAttribute=%08" PRIx32, ulAttribute);
 	return SEC_E_UNSUPPORTED_FUNCTION;
 }
 

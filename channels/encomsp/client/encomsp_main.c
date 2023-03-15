@@ -25,6 +25,7 @@
 #include <winpr/assert.h>
 #include <winpr/print.h>
 
+#include <freerdp/freerdp.h>
 #include <freerdp/channels/log.h>
 #include <freerdp/client/encomsp.h>
 
@@ -92,7 +93,7 @@ static UINT encomsp_read_unicode_string(wStream* s, ENCOMSP_UNICODE_STRING* str)
 		return ERROR_INVALID_DATA;
 	}
 
-	if (!Stream_CheckAndLogRequiredLength(TAG, s, sizeof(WCHAR) * str->cchString))
+	if (!Stream_CheckAndLogRequiredLengthOfSize(TAG, s, str->cchString, sizeof(WCHAR)))
 		return ERROR_INVALID_DATA;
 
 	Stream_Read(s, &(str->wString), (str->cchString * 2)); /* String (variable) */

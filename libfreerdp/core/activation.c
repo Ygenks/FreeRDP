@@ -34,7 +34,7 @@ static BOOL rdp_write_synchronize_pdu(wStream* s, const rdpSettings* settings)
 {
 	const UINT32 PduSource = freerdp_settings_get_uint32(settings, FreeRDP_PduSource);
 
-	if (Stream_GetRemainingCapacity(s) < 4)
+	if (!Stream_CheckAndLogRequiredCapacity(TAG, (s), 4))
 		return FALSE;
 	Stream_Write_UINT16(s, SYNCMSGTYPE_SYNC); /* messageType (2 bytes) */
 	Stream_Write_UINT16(s, PduSource);        /* targetUser (2 bytes) */
@@ -46,8 +46,8 @@ static BOOL rdp_recv_sync_pdu(rdpRdp* rdp, wStream* s, const char* what)
 	UINT16 msgType, targetUser;
 
 	WINPR_UNUSED(rdp);
-	if (!Stream_CheckAndLogRequiredLengthEx(TAG, WLOG_WARN, s, 4, "%s(%s:%" PRIuz ") %s",
-	                                        __FUNCTION__, __FILE__, __LINE__, what))
+	if (!Stream_CheckAndLogRequiredLengthEx(TAG, WLOG_WARN, s, 4, 1, "%s(%s:%" PRIuz ") %s",
+	                                        __FUNCTION__, __FILE__, (size_t)__LINE__, what))
 		return FALSE;
 	Stream_Read_UINT16(s, msgType);
 	if (msgType != SYNCMSGTYPE_SYNC)
@@ -129,7 +129,7 @@ static BOOL rdp_write_client_control_pdu(wStream* s, UINT16 action, UINT16 grant
                                          UINT32 controlId)
 {
 	WINPR_ASSERT(s);
-	if (Stream_GetRemainingCapacity(s) < 8)
+	if (!Stream_CheckAndLogRequiredCapacity(TAG, (s), 8))
 		return FALSE;
 	Stream_Write_UINT16(s, action);    /* action (2 bytes) */
 	Stream_Write_UINT16(s, grantId);   /* grantId (2 bytes) */
@@ -172,7 +172,7 @@ BOOL rdp_send_server_control_cooperate_pdu(rdpRdp* rdp)
 	wStream* s = rdp_data_pdu_init(rdp);
 	if (!s)
 		return FALSE;
-	if (Stream_GetRemainingCapacity(s) < 8)
+	if (!Stream_CheckAndLogRequiredCapacity(TAG, (s), 8))
 	{
 		Stream_Free(s, TRUE);
 		return FALSE;
@@ -190,7 +190,7 @@ static BOOL rdp_send_server_control_granted_pdu(rdpRdp* rdp)
 	wStream* s = rdp_data_pdu_init(rdp);
 	if (!s)
 		return FALSE;
-	if (Stream_GetRemainingCapacity(s) < 8)
+	if (!Stream_CheckAndLogRequiredCapacity(TAG, (s), 8))
 	{
 		Stream_Free(s, TRUE);
 		return FALSE;
@@ -235,10 +235,6 @@ BOOL rdp_send_client_control_pdu(rdpRdp* rdp, UINT16 action)
 
 static BOOL rdp_write_client_persistent_key_list_pdu(wStream* s, RDP_BITMAP_PERSISTENT_INFO* info)
 {
-	int index;
-	UINT32 key1;
-	UINT32 key2;
-
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(info);
 
@@ -260,13 +256,13 @@ static BOOL rdp_write_client_persistent_key_list_pdu(wStream* s, RDP_BITMAP_PERS
 	Stream_Write_UINT16(s, 0);                                   /* pad3 (2 bytes) */
 	                                                             /* entries */
 
-	if (!Stream_EnsureRemainingCapacity(s, info->keyCount * 8))
+	if (!Stream_EnsureRemainingCapacity(s, info->keyCount * 8ull))
 		return FALSE;
 
-	for (index = 0; index < info->keyCount; index++)
+	for (UINT32 index = 0; index < info->keyCount; index++)
 	{
-		key1 = (UINT32)info->keyList[index];
-		key2 = (UINT32)(info->keyList[index] >> 32);
+		const UINT32 key1 = (UINT32)info->keyList[index];
+		const UINT32 key2 = (UINT32)(info->keyList[index] >> 32);
 		Stream_Write_UINT32(s, key1);
 		Stream_Write_UINT32(s, key2);
 	}
@@ -286,7 +282,7 @@ static UINT32 rdp_load_persistent_key_list(rdpRdp* rdp, UINT64** pKeyList)
 
 	*pKeyList = NULL;
 
-	if (!settings->BitmapCachePersistEnabled)
+	if (!freerdp_settings_get_bool(settings, FreeRDP_BitmapCachePersistEnabled))
 		return 0;
 
 	if (!settings->BitmapCachePersistFile)
@@ -312,7 +308,7 @@ static UINT32 rdp_load_persistent_key_list(rdpRdp* rdp, UINT64** pKeyList)
 
 	for (index = 0; index < count; index++)
 	{
-		PERSISTENT_CACHE_ENTRY cacheEntry;
+		PERSISTENT_CACHE_ENTRY cacheEntry = { 0 };
 
 		if (persistent_cache_read_entry(persistent, &cacheEntry) < 1)
 			continue;
@@ -491,7 +487,7 @@ static BOOL rdp_write_client_font_list_pdu(wStream* s, UINT16 flags)
 {
 	WINPR_ASSERT(s);
 
-	if (Stream_GetRemainingCapacity(s) < 8)
+	if (!Stream_CheckAndLogRequiredCapacity(TAG, (s), 8))
 		return FALSE;
 	Stream_Write_UINT16(s, 0);     /* numberFonts (2 bytes) */
 	Stream_Write_UINT16(s, 0);     /* totalNumFonts (2 bytes) */
@@ -569,7 +565,7 @@ BOOL rdp_send_server_font_map_pdu(rdpRdp* rdp)
 	wStream* s = rdp_data_pdu_init(rdp);
 	if (!s)
 		return FALSE;
-	if (Stream_GetRemainingCapacity(s) < 8)
+	if (!Stream_CheckAndLogRequiredCapacity(TAG, (s), 8))
 	{
 		Stream_Free(s, TRUE);
 		return FALSE;
@@ -642,7 +638,7 @@ BOOL rdp_send_deactivate_all(rdpRdp* rdp)
 	if (!s)
 		return FALSE;
 
-	if (Stream_GetRemainingCapacity(s) < 7)
+	if (!Stream_CheckAndLogRequiredCapacity(TAG, (s), 7))
 		goto fail;
 
 	WINPR_ASSERT(rdp->settings);
@@ -753,19 +749,27 @@ BOOL rdp_server_accept_client_font_list_pdu(rdpRdp* rdp, wStream* s)
 		return FALSE;
 	rdp_finalize_set_flag(rdp, FINALIZE_CS_FONT_LIST_PDU);
 
-	rdp_server_transition_to_state(rdp, CONNECTION_STATE_FINALIZATION_CLIENT_SYNC);
+	if (!rdp_server_transition_to_state(rdp, CONNECTION_STATE_FINALIZATION_CLIENT_SYNC))
+		return FALSE;
+
 	if (!rdp_send_server_synchronize_pdu(rdp))
 		return FALSE;
 
-	rdp_server_transition_to_state(rdp, CONNECTION_STATE_FINALIZATION_CLIENT_COOPERATE);
+	if (!rdp_server_transition_to_state(rdp, CONNECTION_STATE_FINALIZATION_CLIENT_COOPERATE))
+		return FALSE;
+
 	if (!rdp_send_server_control_cooperate_pdu(rdp))
 		return FALSE;
 
-	rdp_server_transition_to_state(rdp, CONNECTION_STATE_FINALIZATION_CLIENT_GRANTED_CONTROL);
+	if (!rdp_server_transition_to_state(rdp, CONNECTION_STATE_FINALIZATION_CLIENT_GRANTED_CONTROL))
+		return FALSE;
+
 	if (!rdp_send_server_control_granted_pdu(rdp))
 		return FALSE;
 
-	rdp_server_transition_to_state(rdp, CONNECTION_STATE_FINALIZATION_CLIENT_FONT_MAP);
+	if (!rdp_server_transition_to_state(rdp, CONNECTION_STATE_FINALIZATION_CLIENT_FONT_MAP))
+		return FALSE;
+
 	if (!rdp_send_server_font_map_pdu(rdp))
 		return FALSE;
 

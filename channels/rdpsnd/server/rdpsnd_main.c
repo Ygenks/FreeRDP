@@ -30,6 +30,7 @@
 #include <winpr/print.h>
 #include <winpr/stream.h>
 
+#include <freerdp/freerdp.h>
 #include <freerdp/channels/log.h>
 
 #include "rdpsnd_common.h"
@@ -157,7 +158,7 @@ static UINT rdpsnd_server_recv_quality_mode(RdpsndServerContext* context, wStrea
 {
 	WINPR_ASSERT(context);
 
-	if (Stream_GetRemainingLength(s) < 4)
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
 	{
 		WLog_ERR(TAG, "not enough data in stream!");
 		return ERROR_INVALID_DATA;
@@ -198,7 +199,7 @@ static UINT rdpsnd_server_recv_formats(RdpsndServerContext* context, wStream* s)
 	Stream_Seek_UINT8(s);                               /* bPad */
 
 	/* this check is only a guess as cbSize can influence the size of a format record */
-	if (!Stream_CheckAndLogRequiredLength(TAG, s, 18ull * context->num_client_formats))
+	if (!Stream_CheckAndLogRequiredLengthOfSize(TAG, s, context->num_client_formats, 18ull))
 		return ERROR_INVALID_DATA;
 
 	if (!context->num_client_formats)
@@ -337,8 +338,8 @@ static UINT rdpsnd_server_initialize(RdpsndServerContext* context, BOOL ownThrea
  */
 static UINT rdpsnd_server_select_format(RdpsndServerContext* context, UINT16 client_format_index)
 {
-	int bs;
-	int out_buffer_size;
+	size_t bs;
+	size_t out_buffer_size;
 	AUDIO_FORMAT* format;
 	UINT error = CHANNEL_RC_OK;
 

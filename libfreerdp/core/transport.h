@@ -31,6 +31,7 @@ typedef enum
 
 #include "tcp.h"
 #include "nla.h"
+#include "rdstls.h"
 
 #include "gateway/tsg.h"
 #include "gateway/rdg.h"
@@ -43,7 +44,6 @@ typedef enum
 #include <winpr/collections.h>
 
 #include <freerdp/api.h>
-#include <freerdp/crypto/tls.h>
 
 #include <time.h>
 #include <freerdp/types.h>
@@ -62,9 +62,12 @@ FREERDP_LOCAL BOOL transport_disconnect(rdpTransport* transport);
 FREERDP_LOCAL BOOL transport_connect_rdp(rdpTransport* transport);
 FREERDP_LOCAL BOOL transport_connect_tls(rdpTransport* transport);
 FREERDP_LOCAL BOOL transport_connect_nla(rdpTransport* transport);
+FREERDP_LOCAL BOOL transport_connect_rdstls(rdpTransport* transport);
+FREERDP_LOCAL BOOL transport_connect_aad(rdpTransport* transport);
 FREERDP_LOCAL BOOL transport_accept_rdp(rdpTransport* transport);
 FREERDP_LOCAL BOOL transport_accept_tls(rdpTransport* transport);
 FREERDP_LOCAL BOOL transport_accept_nla(rdpTransport* transport);
+FREERDP_LOCAL BOOL transport_accept_rdstls(rdpTransport* transport);
 
 FREERDP_LOCAL int transport_read_pdu(rdpTransport* transport, wStream* s);
 FREERDP_LOCAL int transport_write(rdpTransport* transport, wStream* s);
@@ -81,11 +84,15 @@ FREERDP_LOCAL HANDLE transport_get_front_bio(rdpTransport* transport);
 FREERDP_LOCAL BOOL transport_set_blocking_mode(rdpTransport* transport, BOOL blocking);
 FREERDP_LOCAL void transport_set_gateway_enabled(rdpTransport* transport, BOOL GatewayEnabled);
 FREERDP_LOCAL void transport_set_nla_mode(rdpTransport* transport, BOOL NlaMode);
+FREERDP_LOCAL void transport_set_rdstls_mode(rdpTransport* transport, BOOL RdstlsMode);
+FREERDP_LOCAL void transport_set_aad_mode(rdpTransport* transport, BOOL AadMode);
 FREERDP_LOCAL BOOL transport_is_write_blocked(rdpTransport* transport);
 FREERDP_LOCAL int transport_drain_output_buffer(rdpTransport* transport);
 
 FREERDP_LOCAL wStream* transport_receive_pool_take(rdpTransport* transport);
 FREERDP_LOCAL int transport_receive_pool_return(rdpTransport* transport, wStream* pdu);
+
+FREERDP_LOCAL BOOL transport_io_callback_set_event(rdpTransport* transport, BOOL set);
 
 FREERDP_LOCAL const rdpTransportIo* transport_get_io_callbacks(rdpTransport* transport);
 FREERDP_LOCAL BOOL transport_set_io_callbacks(rdpTransport* transport,

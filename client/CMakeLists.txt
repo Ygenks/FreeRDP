@@ -28,6 +28,15 @@ if(FREERDP_VENDOR AND WITH_CLIENT)
 		endif()
 	endif()
 
+	if(WITH_CLIENT_SDL)
+		find_package(SDL2)
+		if (SDL2_FOUND)
+			add_subdirectory(SDL)
+		else()
+			message(WARNING "SDL2 requested but not found, continuing build without SDL client")
+		endif()
+	endif()
+
 	if(WITH_X11)
 		add_subdirectory(X11)
 	endif()
@@ -98,4 +107,6 @@ write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/FreeRDP-ClientConfi
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/FreeRDP-ClientConfig.cmake ${CMAKE_CURRENT_BINARY_DIR}/FreeRDP-ClientConfigVersion.cmake
 	DESTINATION ${FREERDP_CLIENT_CMAKE_INSTALL_DIR})
 
-install(EXPORT FreeRDP-ClientTargets DESTINATION ${FREERDP_CLIENT_CMAKE_INSTALL_DIR})
+if (BUILD_SHARED_LIBS)
+    install(EXPORT FreeRDP-ClientTargets DESTINATION ${FREERDP_CLIENT_CMAKE_INSTALL_DIR})
+endif()

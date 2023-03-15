@@ -56,23 +56,63 @@ extern "C"
 	WINPR_API BOOL Stream_EnsureCapacity(wStream* s, size_t size);
 	WINPR_API BOOL Stream_EnsureRemainingCapacity(wStream* s, size_t size);
 
+#define Stream_CheckAndLogRequiredCapacityOfSize(tag, s, nmemb, size)                         \
+	Stream_CheckAndLogRequiredCapacityEx(tag, WLOG_WARN, s, nmemb, size, "%s(%s:%" PRIuz ")", \
+	                                     __FUNCTION__, __FILE__, (size_t)__LINE__)
+#define Stream_CheckAndLogRequiredCapacity(tag, s, len) \
+	Stream_CheckAndLogRequiredCapacityOfSize((tag), (s), (len), 1)
+
+	WINPR_API BOOL Stream_CheckAndLogRequiredCapacityEx(const char* tag, DWORD level, wStream* s,
+	                                                    size_t nmemb, size_t size, const char* fmt,
+	                                                    ...);
+	WINPR_API BOOL Stream_CheckAndLogRequiredCapacityExVa(const char* tag, DWORD level, wStream* s,
+	                                                      size_t nmemb, size_t size,
+	                                                      const char* fmt, va_list args);
+
+#define Stream_CheckAndLogRequiredCapacityOfSizeWLog(log, s, nmemb, size)                         \
+	Stream_CheckAndLogRequiredCapacityWLogEx(log, WLOG_WARN, s, nmemb, size, "%s(%s:%" PRIuz ")", \
+	                                         __FUNCTION__, __FILE__, (size_t)__LINE__)
+
+#define Stream_CheckAndLogRequiredCapacityWLog(log, s, len) \
+	Stream_CheckAndLogRequiredCapacityOfSizeWLog((log), (s), (len), 1)
+
+	WINPR_API BOOL Stream_CheckAndLogRequiredCapacityWLogEx(wLog* log, DWORD level, wStream* s,
+	                                                        size_t nmemb, size_t size,
+	                                                        const char* fmt, ...);
+	WINPR_API BOOL Stream_CheckAndLogRequiredCapacityWLogExVa(wLog* log, DWORD level, wStream* s,
+	                                                          size_t nmemb, size_t size,
+	                                                          const char* fmt, va_list args);
+
 	WINPR_API wStream* Stream_New(BYTE* buffer, size_t size);
 	WINPR_API wStream* Stream_StaticConstInit(wStream* s, const BYTE* buffer, size_t size);
 	WINPR_API wStream* Stream_StaticInit(wStream* s, BYTE* buffer, size_t size);
 	WINPR_API void Stream_Free(wStream* s, BOOL bFreeBuffer);
 
-#define Stream_CheckAndLogRequiredLength(tag, s, len)                                             \
-	Stream_CheckAndLogRequiredLengthEx(tag, WLOG_WARN, s, len, "%s(%s:%" PRIuz ")", __FUNCTION__, \
-	                                   __FILE__, __LINE__)
+#define Stream_CheckAndLogRequiredLengthOfSize(tag, s, nmemb, size)                         \
+	Stream_CheckAndLogRequiredLengthEx(tag, WLOG_WARN, s, nmemb, size, "%s(%s:%" PRIuz ")", \
+	                                   __FUNCTION__, __FILE__, (size_t)__LINE__)
+#define Stream_CheckAndLogRequiredLength(tag, s, len) \
+	Stream_CheckAndLogRequiredLengthOfSize(tag, s, len, 1)
+
 	WINPR_API BOOL Stream_CheckAndLogRequiredLengthEx(const char* tag, DWORD level, wStream* s,
-	                                                  UINT64 len, const char* fmt, ...);
+	                                                  size_t nmemb, size_t size, const char* fmt,
+	                                                  ...);
 	WINPR_API BOOL Stream_CheckAndLogRequiredLengthExVa(const char* tag, DWORD level, wStream* s,
-	                                                    UINT64 len, const char* fmt, va_list args);
+	                                                    size_t nmemb, size_t size, const char* fmt,
+	                                                    va_list args);
+
+#define Stream_CheckAndLogRequiredLengthOfSizeWLog(log, s, nmemb, size)                         \
+	Stream_CheckAndLogRequiredLengthWLogEx(log, WLOG_WARN, s, nmemb, size, "%s(%s:%" PRIuz ")", \
+	                                       __FUNCTION__, __FILE__, (size_t)__LINE__)
+#define Stream_CheckAndLogRequiredLengthWLog(log, s, len) \
+	Stream_CheckAndLogRequiredLengthOfSizeWLog(log, s, len, 1)
+
 	WINPR_API BOOL Stream_CheckAndLogRequiredLengthWLogEx(wLog* log, DWORD level, wStream* s,
-	                                                      UINT64 len, const char* fmt, ...);
+	                                                      size_t nmemb, size_t size,
+	                                                      const char* fmt, ...);
 	WINPR_API BOOL Stream_CheckAndLogRequiredLengthWLogExVa(wLog* log, DWORD level, wStream* s,
-	                                                        UINT64 len, const char* fmt,
-	                                                        va_list args);
+	                                                        size_t nmemb, size_t size,
+	                                                        const char* fmt, va_list args);
 
 	static INLINE void Stream_Seek(wStream* s, size_t _offset)
 	{
@@ -458,17 +498,52 @@ extern "C"
 		memset(_s->buffer, 0, _s->capacity);
 	}
 
-	static INLINE BOOL Stream_SafeSeek(wStream* s, size_t size)
-	{
-		if (Stream_GetRemainingLength(s) < size)
-			return FALSE;
+#define Stream_SafeSeek(s, size) Stream_SafeSeekEx(s, size, __FILE__, __LINE__, __FUNCTION__)
+	WINPR_API BOOL Stream_SafeSeekEx(wStream* s, size_t size, const char* file, size_t line,
+	                                 const char* fkt);
 
-		Stream_Seek(s, size);
-		return TRUE;
-	}
+	WINPR_API BOOL Stream_Read_UTF16_String(wStream* s, WCHAR* dst, size_t charLength);
+	WINPR_API BOOL Stream_Write_UTF16_String(wStream* s, const WCHAR* src, size_t charLength);
 
-	WINPR_API BOOL Stream_Read_UTF16_String(wStream* s, WCHAR* dst, size_t length);
-	WINPR_API BOOL Stream_Write_UTF16_String(wStream* s, const WCHAR* src, size_t length);
+	/** \brief Reads a WCHAR string from a stream and converts it to UTF-8 and returns a newly
+	 * allocated string
+	 *
+	 *  \param s The stream to read data from
+	 *  \param wcharLength The number of WCHAR characters to read (NOT the size in bytes!)
+	 *  \param pUtfCharLength Ignored if \b NULL, otherwise will be set to the number of
+	 *         characters in the resulting UTF-8 string
+	 *  \return A '\0' terminated UTF-8 encoded string or NULL for any failure.
+	 */
+	WINPR_API char* Stream_Read_UTF16_String_As_UTF8(wStream* s, size_t wcharLength,
+	                                                 size_t* pUtfCharLength);
+
+	/** \brief Reads a WCHAR string from a stream and converts it to UTF-8 and
+	 *  writes it to the supplied buffer
+	 *
+	 *  \param s The stream to read data from
+	 *  \param wcharLength The number of WCHAR characters to read (NOT the size in bytes!)
+	 *  \param utfBuffer A pointer to a buffer holding the result string
+	 *  \param utfBufferCharLength The size of the result buffer
+	 *  \return The char length (strlen) of the result string or -1 for failure
+	 */
+	WINPR_API SSIZE_T Stream_Read_UTF16_String_As_UTF8_Buffer(wStream* s, size_t wcharLength,
+	                                                          char* utfBuffer,
+	                                                          size_t utfBufferCharLength);
+
+	/** \brief Writes a UTF-8 string UTF16 encoded to the stream. If the UTF-8
+	 *  string is short, the remainig characters are filled up with '\0'
+	 *
+	 *  \param s The stream to write to
+	 *  \param wcharLength the length (in WCHAR characters) to write
+	 *  \param src The source data buffer with the UTF-8 data
+	 *  \param length The length in bytes of the UTF-8 buffer
+	 *  \param fill If \b TRUE fill the unused parts of the wcharLength with 0
+	 *
+	 *  \b return number of used characters for success, /b -1 for failure
+	 */
+	WINPR_API SSIZE_T Stream_Write_UTF16_String_From_UTF8(wStream* s, size_t wcharLength,
+	                                                      const char* src, size_t length,
+	                                                      BOOL fill);
 
 	/* StreamPool */
 

@@ -1,4 +1,4 @@
-/**
+/*
  * FreeRDP: A Remote Desktop Protocol Implementation
  * RPC over HTTP
  *
@@ -30,9 +30,7 @@
 
 #include <freerdp/log.h>
 
-#include <openssl/bio.h>
-
-#ifdef HAVE_VALGRIND_MEMCHECK_H
+#ifdef FREERDP_HAVE_VALGRIND_MEMCHECK_H
 #include <valgrind/memcheck.h>
 #endif
 
@@ -61,30 +59,30 @@ static const char* PTYPE_STRINGS[] = { "PTYPE_REQUEST",       "PTYPE_PING",
 	                                   "PTYPE_CO_CANCEL",     "PTYPE_ORPHANED",
 	                                   "PTYPE_RTS",           "" };
 
-/**
+/*
  * [MS-RPCH]: Remote Procedure Call over HTTP Protocol Specification:
  * http://msdn.microsoft.com/en-us/library/cc243950/
- */
-
-/**
- *                                      Connection Establishment\n
  *
- *     Client                  Outbound Proxy           Inbound Proxy                 Server\n
- *        |                         |                         |                         |\n
- *        |-----------------IN Channel Request--------------->|                         |\n
- *        |---OUT Channel Request-->|                         |<-Legacy Server Response-|\n
- *        |                         |<--------------Legacy Server Response--------------|\n
- *        |                         |                         |                         |\n
- *        |---------CONN_A1-------->|                         |                         |\n
- *        |----------------------CONN_B1--------------------->|                         |\n
- *        |                         |----------------------CONN_A2--------------------->|\n
- *        |                         |                         |                         |\n
- *        |<--OUT Channel Response--|                         |---------CONN_B2-------->|\n
- *        |<--------CONN_A3---------|                         |                         |\n
- *        |                         |<---------------------CONN_C1----------------------|\n
- *        |                         |                         |<--------CONN_B3---------|\n
- *        |<--------CONN_C2---------|                         |                         |\n
- *        |                         |                         |                         |\n
+ *
+ *
+ *                                      Connection Establishment
+ *
+ *     Client                  Outbound Proxy           Inbound Proxy                 Server
+ *        |                         |                         |                         |
+ *        |-----------------IN Channel Request--------------->|                         |
+ *        |---OUT Channel Request-->|                         |<-Legacy Server Response-|
+ *        |                         |<--------------Legacy Server Response--------------|
+ *        |                         |                         |                         |
+ *        |---------CONN_A1-------->|                         |                         |
+ *        |----------------------CONN_B1--------------------->|                         |
+ *        |                         |----------------------CONN_A2--------------------->|
+ *        |                         |                         |                         |
+ *        |<--OUT Channel Response--|                         |---------CONN_B2-------->|
+ *        |<--------CONN_A3---------|                         |                         |
+ *        |                         |<---------------------CONN_C1----------------------|
+ *        |                         |                         |<--------CONN_B3---------|
+ *        |<--------CONN_C2---------|                         |                         |
+ *        |                         |                         |                         |
  *
  */
 
@@ -170,7 +168,7 @@ size_t rpc_offset_pad(size_t* offset, size_t pad)
 	return pad;
 }
 
-/**
+/*
  * PDU Segments:
  *  ________________________________
  * |                                |
@@ -189,7 +187,7 @@ size_t rpc_offset_pad(size_t* offset, size_t pad)
  * |________________________________|
  */
 
-/**
+/*
  * PDU Structure with verification trailer
  *
  * MUST only appear in a request PDU!
@@ -220,7 +218,7 @@ size_t rpc_offset_pad(size_t* offset, size_t pad)
  *
  */
 
-/**
+/*
  * Security Trailer:
  *
  * The sec_trailer structure MUST be placed at the end of the PDU, including past stub data,
@@ -307,7 +305,7 @@ BOOL rpc_get_stub_data_info(const rpcconn_hdr_t* header, size_t* poffset, size_t
 
 	sec_trailer_offset = frag_length - auth_length - 8;
 
-	/**
+	/*
 	 * According to [MS-RPCE], auth_pad_length is the number of padding
 	 * octets used to 4-byte align the security trailer, but in practice
 	 * we get values up to 15, which indicates 16-byte alignment.
@@ -356,7 +354,7 @@ SSIZE_T rpc_channel_write(RpcChannel* channel, const BYTE* data, size_t length)
 	if (!channel || (length > INT32_MAX))
 		return -1;
 
-	status = tls_write_all(channel->tls, data, (INT32)length);
+	status = freerdp_tls_write_all(channel->tls, data, (INT32)length);
 	return status;
 }
 
@@ -474,7 +472,7 @@ void rpc_channel_free(RpcChannel* channel)
 
 	credssp_auth_free(channel->auth);
 	http_context_free(channel->http);
-	tls_free(channel->tls);
+	freerdp_tls_free(channel->tls);
 	free(channel);
 }
 
@@ -705,7 +703,7 @@ static BOOL rpc_channel_tls_connect(RpcChannel* channel, UINT32 timeout)
 	}
 
 	channel->bio = bufferedBio;
-	tls = channel->tls = tls_new(settings);
+	tls = channel->tls = freerdp_tls_new(settings);
 
 	if (!tls)
 		return FALSE;
@@ -713,7 +711,7 @@ static BOOL rpc_channel_tls_connect(RpcChannel* channel, UINT32 timeout)
 	tls->hostname = settings->GatewayHostname;
 	tls->port = settings->GatewayPort;
 	tls->isGatewayTransport = TRUE;
-	tlsStatus = tls_connect(tls, bufferedBio);
+	tlsStatus = freerdp_tls_connect(tls, bufferedBio);
 
 	if (tlsStatus < 1)
 	{

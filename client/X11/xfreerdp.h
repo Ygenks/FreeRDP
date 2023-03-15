@@ -181,10 +181,6 @@ struct xf_context
 	BYTE* bitmap_buffer;
 
 	BOOL frame_begin;
-	UINT16 frame_x1;
-	UINT16 frame_y1;
-	UINT16 frame_x2;
-	UINT16 frame_y2;
 
 	int XInputOpcode;
 
@@ -210,6 +206,7 @@ struct xf_context
 	wArrayList* xevents;
 	BOOL actionScriptExists;
 
+	int attribs_mask;
 	XSetWindowAttributes attribs;
 	BOOL complex_regions;
 	VIRTUAL_SCREEN vscreen;
@@ -299,6 +296,7 @@ struct xf_context
 };
 
 BOOL xf_create_window(xfContext* xfc);
+BOOL xf_create_image(xfContext* xfc);
 void xf_toggle_fullscreen(xfContext* xfc);
 
 enum XF_EXIT_CODE
@@ -383,6 +381,8 @@ BOOL xf_picture_transform_required(xfContext* xfc);
 void xf_draw_screen_(xfContext* xfc, int x, int y, int w, int h, const char* fkt, const char* file,
                      int line);
 
-FREERDP_API DWORD xf_exit_code_from_disconnect_reason(DWORD reason);
+BOOL xf_keyboard_update_modifier_map(xfContext* xfc);
+
+DWORD xf_exit_code_from_disconnect_reason(DWORD reason);
 
 #endif /* FREERDP_CLIENT_X11_FREERDP_H */

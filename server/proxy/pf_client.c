@@ -309,6 +309,37 @@ static BOOL pf_client_pre_connect(freerdp* instance)
 	return pf_modules_run_hook(pc->pdata->module, HOOK_TYPE_CLIENT_PRE_CONNECT, pc->pdata, pc);
 }
 
+/** @brief arguments for updateBackIdFn */
+typedef struct
+{
+	pServerContext* ps;
+	const char* name;
+	UINT32 backId;
+} UpdateBackIdArgs;
+
+static BOOL updateBackIdFn(const void* key, void* value, void* arg)
+{
+	pServerStaticChannelContext* current = (pServerStaticChannelContext*)value;
+	UpdateBackIdArgs* updateArgs = (UpdateBackIdArgs*)arg;
+
+	if (strcmp(updateArgs->name, current->channel_name) != 0)
+		return TRUE;
+
+	current->back_channel_id = updateArgs->backId;
+	if (!HashTable_Insert(updateArgs->ps->channelsByBackId, &current->back_channel_id, current))
+	{
+		WLog_ERR(TAG, "error inserting channel in channelsByBackId table");
+	}
+	return FALSE;
+}
+
+static BOOL pf_client_update_back_id(pServerContext* ps, const char* name, UINT32 backId)
+{
+	UpdateBackIdArgs res = { ps, name, backId };
+
+	return HashTable_Foreach(ps->channelsByFrontId, updateBackIdFn, &res) == FALSE;
+}
+
 static BOOL pf_client_load_channels(freerdp* instance)
 {
 	pClientContext* pc;
@@ -364,6 +395,7 @@ static BOOL pf_client_load_channels(freerdp* instance)
 			CHANNEL_DEF* channels = (CHANNEL_DEF*)freerdp_settings_get_pointer_array_writable(
 			    settings, FreeRDP_ChannelDefArray, 0);
 			size_t x, size = freerdp_settings_get_uint32(settings, FreeRDP_ChannelDefArraySize);
+			UINT32 id = MCS_GLOBAL_CHANNEL_ID + 1;
 
 			WINPR_ASSERT(channels || (size == 0));
 
@@ -385,7 +417,14 @@ static BOOL pf_client_load_channels(freerdp* instance)
 					size--;
 				}
 				else
+				{
+					if (!pf_client_update_back_id(ps, cur->name, id++))
+					{
+						WLog_ERR(TAG, "unable to update backid for channel %s", cur->name);
+						return FALSE;
+					}
 					x++;
+				}
 			}
 
 			if (!freerdp_settings_set_uint32(settings, FreeRDP_ChannelCount, x))
@@ -403,7 +442,6 @@ static BOOL pf_client_receive_channel_data_hook(freerdp* instance, UINT16 channe
 	pServerContext* ps;
 	proxyData* pdata;
 	pServerStaticChannelContext* channel;
-	UINT16 server_channel_id;
 	UINT64 channelId64 = channelId;
 
 	WINPR_ASSERT(instance);
@@ -419,7 +457,7 @@ static BOOL pf_client_receive_channel_data_hook(freerdp* instance, UINT16 channe
 	pdata = ps->pdata;
 	WINPR_ASSERT(pdata);
 
-	channel = HashTable_GetItemValue(ps->channelsById, &channelId64);
+	channel = HashTable_GetItemValue(ps->channelsByBackId, &channelId64);
 	if (!channel)
 		return TRUE;
 
@@ -427,23 +465,20 @@ static BOOL pf_client_receive_channel_data_hook(freerdp* instance, UINT16 channe
 	switch (channel->onBackData(pdata, channel, xdata, xsize, flags, totalSize))
 	{
 		case PF_CHANNEL_RESULT_PASS:
-			break;
+			/* Ignore messages for channels that can not be mapped.
+			 * The client might not have enabled support for this specific channel,
+			 * so just drop the message. */
+			if (channel->front_channel_id == 0)
+				return TRUE;
+
+			return ps->context.peer->SendChannelPacket(ps->context.peer, channel->front_channel_id,
+			                                           totalSize, flags, xdata, xsize);
 		case PF_CHANNEL_RESULT_DROP:
 			return TRUE;
 		case PF_CHANNEL_RESULT_ERROR:
+		default:
 			return FALSE;
 	}
-
-	server_channel_id = WTSChannelGetId(ps->context.peer, channel->channel_name);
-
-	/* Ignore messages for channels that can not be mapped.
-	 * The client might not have enabled support for this specific channel,
-	 * so just drop the message. */
-	if (server_channel_id == 0)
-		return TRUE;
-
-	return ps->context.peer->SendChannelPacket(ps->context.peer, server_channel_id, totalSize,
-	                                           flags, xdata, xsize);
 }
 
 static BOOL pf_client_on_server_heartbeat(freerdp* instance, BYTE period, BYTE count1, BYTE count2)
@@ -686,6 +721,10 @@ static BOOL pf_client_connect_without_nla(pClientContext* pc)
 	WINPR_ASSERT(pc);
 	instance = pc->context.instance;
 	WINPR_ASSERT(instance);
+
+	if (!freerdp_context_reset(instance))
+		return FALSE;
+
 	settings = pc->context.settings;
 	WINPR_ASSERT(settings);
 
@@ -698,7 +737,7 @@ static BOOL pf_client_connect_without_nla(pClientContext* pc)
 
 	/* do not allow next connection failure */
 	pc->allow_next_conn_failure = FALSE;
-	return freerdp_reconnect(instance);
+	return freerdp_connect(instance);
 }
 
 static BOOL pf_client_connect(freerdp* instance)
@@ -802,8 +841,7 @@ static DWORD WINAPI pf_client_thread_proc(pClientContext* pc)
 
 		if (status == WAIT_FAILED)
 		{
-			WLog_ERR(TAG, "%s: WaitForMultipleObjects failed with %" PRIu32 "", __FUNCTION__,
-			         status);
+			WLog_ERR(TAG, "WaitForMultipleObjects failed with %" PRIu32 "", status);
 			break;
 		}
 

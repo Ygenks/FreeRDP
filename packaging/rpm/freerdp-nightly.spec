@@ -46,9 +46,11 @@ BuildRequires: uuid-devel
 BuildRequires: libxml2-devel
 BuildRequires: zlib-devel
 BuildRequires: krb5-devel
+BuildRequires: cjson-devel
 
 # (Open)Suse
 %if %{defined suse_version}
+BuildRequires: libSDL2-devel
 BuildRequires: docbook-xsl-stylesheets
 BuildRequires: libxslt-tools
 BuildRequires: pkg-config
@@ -66,6 +68,7 @@ BuildRequires: libswresample-devel
 %endif
 # fedora 21+
 %if 0%{?fedora} >= 21 || 0%{?rhel} >= 7
+BuildRequires: SDL2-devel
 BuildRequires: docbook-style-xsl
 BuildRequires: libxslt
 BuildRequires: pkgconfig
@@ -110,6 +113,7 @@ cp %{_topdir}/SOURCES/source_version freerdp-nightly-%{version}/.source_version
 
 %cmake  -DCMAKE_SKIP_RPATH=FALSE \
         -DCMAKE_SKIP_INSTALL_RPATH=FALSE \
+        -DWITH_FREERDP_DEPRECATED_COMMANDLINE=ON \
         -DWITH_PULSE=ON \
         -DWITH_CHANNELS=ON \
         -DWITH_CUPS=ON \
@@ -122,7 +126,7 @@ cp %{_topdir}/SOURCES/source_version freerdp-nightly-%{version}/.source_version
 %if 0%{?fedora} < 21 || 0%{?rhel} < 8
         -DWITH_WAYLAND=OFF \
 %endif
-        -DWITH_GSSAPI=OFF \
+        -DWITH_KRB5=ON \
         -DCHANNEL_URBDRC=ON \
         -DCHANNEL_URBDRC_CLIENT=ON \
         -DWITH_SERVER=ON \

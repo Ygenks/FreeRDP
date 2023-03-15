@@ -22,6 +22,11 @@
 #include <winpr/wtypes.h>
 #include <winpr/assert.h>
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 #define POD_ARRAYS_IMPL(T, TLOWER)                                                        \
 	typedef struct                                                                        \
 	{                                                                                     \
@@ -124,14 +129,9 @@
 		a->nvalues = 0;                                                                   \
 	}
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
-
-	POD_ARRAYS_IMPL(UINT16, uint16);
-	POD_ARRAYS_IMPL(UINT32, uint32);
-	POD_ARRAYS_IMPL(UINT64, uint64);
+	POD_ARRAYS_IMPL(UINT16, uint16)
+	POD_ARRAYS_IMPL(UINT32, uint32)
+	POD_ARRAYS_IMPL(UINT64, uint64)
 
 #ifdef __cplusplus
 }

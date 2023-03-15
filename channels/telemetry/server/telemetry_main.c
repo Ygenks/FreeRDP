@@ -19,6 +19,7 @@
 
 #include <freerdp/config.h>
 
+#include <freerdp/freerdp.h>
 #include <freerdp/channels/log.h>
 #include <freerdp/server/telemetry.h>
 
@@ -125,11 +126,8 @@ static UINT telemetry_server_recv_rdp_telemetry_pdu(TelemetryServerContext* cont
 	TELEMETRY_RDP_TELEMETRY_PDU pdu;
 	UINT error = CHANNEL_RC_OK;
 
-	if (Stream_GetRemainingLength(s) < 16)
-	{
-		WLog_ERR(TAG, "telemetry_server_recv_rdp_telemetry_pdu: Not enough data!");
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 16))
 		return ERROR_NO_DATA;
-	}
 
 	Stream_Read_UINT32(s, pdu.PromptForCredentialsMillis);
 	Stream_Read_UINT32(s, pdu.PromptForCredentialsDoneMillis);

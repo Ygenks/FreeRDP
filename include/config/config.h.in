@@ -4,9 +4,7 @@
 #include <winpr/config.h>
 
 /* Include files */
-#cmakedefine HAVE_SYSLOG_H
-#cmakedefine HAVE_JOURNALD_H
-#cmakedefine HAVE_VALGRIND_MEMCHECK_H
+#cmakedefine FREERDP_HAVE_VALGRIND_MEMCHECK_H
 
 /* Features */
 #cmakedefine SWRESAMPLE_FOUND
@@ -22,6 +20,7 @@
 #cmakedefine WITH_CUPS
 #cmakedefine WITH_JPEG
 #cmakedefine WITH_WIN8
+#cmakedefine WITH_CJSON
 #cmakedefine WITH_CAIRO
 #cmakedefine WITH_SWSCALE
 #cmakedefine WITH_RDPSND_DSOUND
@@ -148,6 +147,7 @@
 #cmakedefine WITH_DEBUG_CAPABILITIES
 #cmakedefine WITH_DEBUG_CHANNELS
 #cmakedefine WITH_DEBUG_CLIPRDR
+#cmakedefine WITH_DEBUG_CODECS
 #cmakedefine WITH_DEBUG_RDPGFX
 #cmakedefine WITH_DEBUG_DVC
 #cmakedefine WITH_DEBUG_TSMF
@@ -170,7 +170,6 @@
 #cmakedefine WITH_DEBUG_TRANSPORT
 #cmakedefine WITH_DEBUG_WND
 #cmakedefine WITH_DEBUG_X11
-#cmakedefine WITH_DEBUG_X11_CLIPRDR
 #cmakedefine WITH_DEBUG_X11_LOCAL_MOVESIZE
 #cmakedefine WITH_DEBUG_XV
 #cmakedefine WITH_DEBUG_RINGBUFFER

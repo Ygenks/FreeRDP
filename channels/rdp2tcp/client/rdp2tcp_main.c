@@ -24,6 +24,7 @@
 #include <winpr/pipe.h>
 #include <winpr/thread.h>
 
+#include <freerdp/freerdp.h>
 #include <freerdp/svc.h>
 #include <freerdp/channels/rdp2tcp.h>
 
@@ -132,11 +133,14 @@ static void dumpData(char* data, unsigned length)
 
 static DWORD WINAPI copyThread(void* data)
 {
+	DWORD status = WAIT_OBJECT_0;
 	Plugin* plugin = (Plugin*)data;
 	size_t const bufsize = 16 * 1024;
 
-	while (1)
+	while (status == WAIT_OBJECT_0)
 	{
+
+		HANDLE handles[MAXIMUM_WAIT_OBJECTS] = { 0 };
 		DWORD dwRead;
 		char* buffer = malloc(bufsize);
 
@@ -168,8 +172,11 @@ static DWORD WINAPI copyThread(void* data)
 			goto fail;
 		}
 
-		WaitForSingleObject(plugin->writeComplete, INFINITE);
-		ResetEvent(plugin->writeComplete);
+		handles[0] = plugin->writeComplete;
+		handles[1] = freerdp_abort_event(plugin->channelEntryPoints.context);
+		status = WaitForMultipleObjects(2, handles, FALSE, INFINITE);
+		if (status == WAIT_OBJECT_0)
+			ResetEvent(plugin->writeComplete);
 	}
 
 fail:

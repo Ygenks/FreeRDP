@@ -154,7 +154,7 @@ static char* winpr_get_timezone_from_link(const char* links[], size_t count)
 				goto end;
 
 			strncpy(tzid, &buf[pos], alloc);
-			WLog_DBG(TAG, "%s: tzid: %s", __FUNCTION__, tzid);
+			WLog_DBG(TAG, "tzid: %s", tzid);
 			goto end;
 		}
 
@@ -168,14 +168,7 @@ static char* winpr_get_timezone_from_link(const char* links[], size_t count)
 }
 
 #if defined(ANDROID)
-#include <jni.h>
-static JavaVM* jniVm = NULL;
-
-JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved)
-{
-	jniVm = vm;
-	return JNI_VERSION_1_6;
-}
+#include "../utils/android.h"
 
 static char* winpr_get_android_timezone_identifier(void)
 {
@@ -266,7 +259,7 @@ static char* winpr_get_unix_timezone_identifier_from_file(void)
 	tzid = winpr_read_unix_timezone_identifier_from_file(fp);
 	fclose(fp);
 	if (tzid != NULL)
-		WLog_DBG(TAG, "%s: tzid: %s", __FUNCTION__, tzid);
+		WLog_DBG(TAG, "tzid: %s", tzid);
 	return tzid;
 #endif
 }
@@ -408,7 +401,7 @@ DWORD GetTimeZoneInformation(LPTIME_ZONE_INFORMATION lpTimeZoneInformation)
 		goto out_error;
 
 	memset(tz, 0, sizeof(TIME_ZONE_INFORMATION));
-#ifdef HAVE_TM_GMTOFF
+#ifdef WINPR_HAVE_TM_GMTOFF
 	{
 		long bias = -(local_time->tm_gmtoff / 60L);
 
@@ -424,27 +417,23 @@ DWORD GetTimeZoneInformation(LPTIME_ZONE_INFORMATION lpTimeZoneInformation)
 
 	if (dtz != NULL)
 	{
-		int status;
+		const TIME_ZONE_INFORMATION empty = { 0 };
+
 		WLog_DBG(TAG, "tz: Bias=%" PRId32 " sn='%s' dln='%s'", dtz->Bias, dtz->StandardName,
 		         dtz->DaylightName);
-		tz->Bias = dtz->Bias;
-		tz->StandardBias = 0;
-		tz->DaylightBias = 0;
-		ZeroMemory(tz->StandardName, sizeof(tz->StandardName));
-		ZeroMemory(tz->DaylightName, sizeof(tz->DaylightName));
-		status = MultiByteToWideChar(CP_UTF8, 0, dtz->StandardName, -1, tz->StandardName,
-		                             sizeof(tz->StandardName) / sizeof(WCHAR) - 1);
 
-		if (status < 1)
+		*tz = empty;
+		tz->Bias = dtz->Bias;
+
+		if (ConvertUtf8ToWChar(dtz->StandardName, tz->StandardName, ARRAYSIZE(tz->StandardName)) <
+		    0)
 		{
 			WLog_ERR(TAG, "StandardName conversion failed - using default");
 			goto out_error;
 		}
 
-		status = MultiByteToWideChar(CP_UTF8, 0, dtz->DaylightName, -1, tz->DaylightName,
-		                             sizeof(tz->DaylightName) / sizeof(WCHAR) - 1);
-
-		if (status < 1)
+		if (ConvertUtf8ToWChar(dtz->DaylightName, tz->DaylightName, ARRAYSIZE(tz->DaylightName)) <
+		    0)
 		{
 			WLog_ERR(TAG, "DaylightName conversion failed - using default");
 			goto out_error;

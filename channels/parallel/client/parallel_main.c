@@ -26,10 +26,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef HAVE_UNISTD_H
-#include <unistd.h>
-#endif
-
 #include <fcntl.h>
 #include <errno.h>
 
@@ -53,6 +49,7 @@
 #include <winpr/interlocked.h>
 
 #include <freerdp/types.h>
+#include <freerdp/freerdp.h>
 #include <freerdp/constants.h>
 #include <freerdp/channels/rdpdr.h>
 #include <freerdp/channels/log.h>
@@ -80,7 +77,6 @@ typedef struct
 static UINT parallel_process_irp_create(PARALLEL_DEVICE* parallel, IRP* irp)
 {
 	char* path = NULL;
-	int status;
 	WCHAR* ptr;
 	UINT32 PathLength;
 	if (!Stream_SafeSeek(irp->input, 28))
@@ -90,17 +86,14 @@ static UINT parallel_process_irp_create(PARALLEL_DEVICE* parallel, IRP* irp)
 	if (!Stream_CheckAndLogRequiredLength(TAG, irp->input, 4))
 		return ERROR_INVALID_DATA;
 	Stream_Read_UINT32(irp->input, PathLength);
+	if (PathLength < sizeof(WCHAR))
+		return ERROR_INVALID_DATA;
 	ptr = (WCHAR*)Stream_Pointer(irp->input);
 	if (!Stream_SafeSeek(irp->input, PathLength))
 		return ERROR_INVALID_DATA;
-	status = ConvertFromUnicode(CP_UTF8, 0, ptr, PathLength / 2, &path, 0, NULL, NULL);
-
-	if (status < 1)
-		if (!(path = (char*)calloc(1, 1)))
-		{
-			WLog_ERR(TAG, "calloc failed!");
-			return CHANNEL_RC_NO_MEMORY;
-		}
+	path = ConvertWCharNToUtf8Alloc(ptr, PathLength / sizeof(WCHAR), NULL);
+	if (!path)
+		return CHANNEL_RC_NO_MEMORY;
 
 	parallel->id = irp->devman->id_sequence++;
 	parallel->file = open(parallel->path, O_RDWR);
@@ -402,6 +395,21 @@ static UINT parallel_free(DEVICE* device)
 	return CHANNEL_RC_OK;
 }
 
+static void parallel_message_free(void* obj)
+{
+	wMessage* msg = obj;
+	if (!msg)
+		return;
+	if (msg->id != 0)
+		return;
+
+	IRP* irp = (IRP*)msg->wParam;
+	if (!irp)
+		return;
+	WINPR_ASSERT(irp->Discard);
+	irp->Discard(irp);
+}
+
 /**
  * Function description
  *
@@ -468,6 +476,10 @@ UINT parallel_DeviceServiceEntry(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints)
 			error = CHANNEL_RC_NO_MEMORY;
 			goto error_out;
 		}
+
+		wObject* obj = MessageQueue_Object(parallel->queue);
+		WINPR_ASSERT(obj);
+		obj->fnObjectFree = parallel_message_free;
 
 		if ((error = pEntryPoints->RegisterDevice(pEntryPoints->devman, (DEVICE*)parallel)))
 		{

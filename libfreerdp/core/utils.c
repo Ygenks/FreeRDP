@@ -44,17 +44,36 @@ BOOL utils_str_copy(const char* value, char** dst)
 	return (*dst) != NULL;
 }
 
+static BOOL utils_copy_smartcard_settings(const rdpSettings* settings, rdpSettings* origSettings)
+{
+	/* update original settings with provided smart card settings */
+	origSettings->SmartcardLogon = settings->SmartcardLogon;
+	origSettings->PasswordIsSmartcardPin = settings->PasswordIsSmartcardPin;
+	if (!utils_str_copy(settings->ReaderName, &origSettings->ReaderName))
+		return FALSE;
+	if (!utils_str_copy(settings->CspName, &origSettings->CspName))
+		return FALSE;
+	if (!utils_str_copy(settings->ContainerName, &origSettings->ContainerName))
+		return FALSE;
+
+	return TRUE;
+}
+
 auth_status utils_authenticate_gateway(freerdp* instance, rdp_auth_reason reason)
 {
 	rdpSettings* settings;
+	rdpSettings* origSettings;
 	BOOL prompt = FALSE;
 	BOOL proceed;
 
 	WINPR_ASSERT(instance);
 	WINPR_ASSERT(instance->context);
 	WINPR_ASSERT(instance->context->settings);
+	WINPR_ASSERT(instance->context->rdp);
+	WINPR_ASSERT(instance->context->rdp->originalSettings);
 
 	settings = instance->context->settings;
+	origSettings = instance->context->rdp->originalSettings;
 
 	if (freerdp_shall_disconnect_context(instance->context))
 		return AUTH_FAILED;
@@ -70,34 +89,61 @@ auth_status utils_authenticate_gateway(freerdp* instance, rdp_auth_reason reason
 	if (!instance->GatewayAuthenticate && !instance->AuthenticateEx)
 		return AUTH_NO_CREDENTIALS;
 
-	if (instance->AuthenticateEx)
+	if (!instance->GatewayAuthenticate)
+	{
 		proceed =
 		    instance->AuthenticateEx(instance, &settings->GatewayUsername,
 		                             &settings->GatewayPassword, &settings->GatewayDomain, reason);
+		if (!proceed)
+			return AUTH_CANCELLED;
+	}
 	else
+	{
 		proceed =
 		    instance->GatewayAuthenticate(instance, &settings->GatewayUsername,
 		                                  &settings->GatewayPassword, &settings->GatewayDomain);
+		if (!proceed)
+			return AUTH_NO_CREDENTIALS;
+	}
 
-	if (!proceed)
+	if (utils_str_is_empty(settings->GatewayUsername) ||
+	    utils_str_is_empty(settings->GatewayPassword))
 		return AUTH_NO_CREDENTIALS;
 
 	if (!utils_sync_credentials(settings, FALSE))
 		return AUTH_FAILED;
+
+	/* update original settings with provided user credentials */
+	if (!utils_str_copy(settings->GatewayUsername, &origSettings->GatewayUsername))
+		return AUTH_FAILED;
+	if (!utils_str_copy(settings->GatewayDomain, &origSettings->GatewayDomain))
+		return AUTH_FAILED;
+	if (!utils_str_copy(settings->GatewayPassword, &origSettings->GatewayPassword))
+		return AUTH_FAILED;
+	if (!utils_sync_credentials(origSettings, FALSE))
+		return AUTH_FAILED;
+
+	if (!utils_copy_smartcard_settings(settings, origSettings))
+		return AUTH_FAILED;
+
 	return AUTH_SUCCESS;
 }
 
 auth_status utils_authenticate(freerdp* instance, rdp_auth_reason reason, BOOL override)
 {
 	rdpSettings* settings;
+	rdpSettings* origSettings;
 	BOOL prompt = !override;
 	BOOL proceed;
 
 	WINPR_ASSERT(instance);
 	WINPR_ASSERT(instance->context);
 	WINPR_ASSERT(instance->context->settings);
+	WINPR_ASSERT(instance->context->rdp);
+	WINPR_ASSERT(instance->context->rdp->originalSettings);
 
 	settings = instance->context->settings;
+	origSettings = instance->context->rdp->originalSettings;
 
 	if (freerdp_shall_disconnect_context(instance->context))
 		return AUTH_FAILED;
@@ -136,18 +182,40 @@ auth_status utils_authenticate(freerdp* instance, rdp_auth_reason reason, BOOL o
 	if (!instance->Authenticate && !instance->AuthenticateEx)
 		return AUTH_NO_CREDENTIALS;
 
-	if (instance->AuthenticateEx)
+	if (!instance->Authenticate)
+	{
 		proceed = instance->AuthenticateEx(instance, &settings->Username, &settings->Password,
 		                                   &settings->Domain, reason);
+		if (!proceed)
+			return AUTH_CANCELLED;
+	}
 	else
+	{
 		proceed = instance->Authenticate(instance, &settings->Username, &settings->Password,
 		                                 &settings->Domain);
+		if (!proceed)
+			return AUTH_NO_CREDENTIALS;
+	}
 
-	if (!proceed)
+	if (utils_str_is_empty(settings->Username) || utils_str_is_empty(settings->Password))
 		return AUTH_NO_CREDENTIALS;
 
 	if (!utils_sync_credentials(settings, TRUE))
 		return AUTH_FAILED;
+
+	/* update original settings with provided user credentials */
+	if (!utils_str_copy(settings->Username, &origSettings->Username))
+		return AUTH_FAILED;
+	if (!utils_str_copy(settings->Domain, &origSettings->Domain))
+		return AUTH_FAILED;
+	if (!utils_str_copy(settings->Password, &origSettings->Password))
+		return AUTH_FAILED;
+	if (!utils_sync_credentials(origSettings, TRUE))
+		return AUTH_FAILED;
+
+	if (!utils_copy_smartcard_settings(settings, origSettings))
+		return AUTH_FAILED;
+
 	return AUTH_SUCCESS;
 }
 

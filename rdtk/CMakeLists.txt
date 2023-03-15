@@ -24,7 +24,7 @@ set(RDTK_VERSION_FULL "${RDTK_VERSION}")
 set(RDTK_API_VERSION "${RDTK_VERSION_MAJOR}")
 
 if (NOT FREERDP_UNIFIED_BUILD)
-	cmake_minimum_required(VERSION 3.9)
+	cmake_minimum_required(VERSION 3.13)
 	project(RdTk VERSION ${RDTK_VERSION} LANGUAGES C)
 
 	set(CMAKE_C_STANDARD 11)
@@ -82,12 +82,10 @@ include (SetFreeRDPCMakeInstallDir)
 add_definitions(-DRDTK_EXPORTS)
 
 if (NOT IOS)
-	check_include_files(stdbool.h HAVE_STDBOOL_H)
-	if (NOT HAVE_STDBOOL_H)
+    check_include_files(stdbool.h RDTK_HAVE_STDBOOL_H)
+    if (NOT RDTK_HAVE_STDBOOL_H)
 		include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/../compat/stdbool)
 	endif()
-else()
-	set(HAVE_STDBOOL_H 1)
 endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
