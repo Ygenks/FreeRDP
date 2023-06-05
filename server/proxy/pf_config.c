@@ -390,20 +390,71 @@ static BOOL pf_config_load_gfx_settings(wIniFile* ini, proxyConfig* config)
 
 static char* pf_config_decode_base64(const char* data, const char* name, size_t* pLength)
 {
+	const char* headers[] = { "-----BEGIN PUBLIC KEY-----", "-----BEGIN RSA PUBLIC KEY-----",
+		                      "-----BEGIN CERTIFICATE-----", "-----BEGIN PRIVATE KEY-----",
+		                      "-----BEGIN RSA PRIVATE KEY-----" };
+
 	size_t decoded_length = 0;
 	char* decoded = NULL;
 	if (!data)
+	{
+		WLog_ERR(TAG, "Invalid base64 data [%p] for %s", data, name);
 		return NULL;
+	}
 
 	WINPR_ASSERT(name);
 	WINPR_ASSERT(pLength);
 
 	const size_t length = strlen(data);
+
+	if (strncmp(data, "-----", 5) == 0)
+	{
+		BOOL expected = FALSE;
+		for (size_t x = 0; x < ARRAYSIZE(headers); x++)
+		{
+			const char* header = headers[x];
+
+			if (strncmp(data, header, strlen(header)) == 0)
+				expected = TRUE;
+		}
+
+		if (!expected)
+		{
+			/* Extract header for log message
+			 * expected format is '----- SOMETEXT -----'
+			 */
+			char hdr[128] = { 0 };
+			const char* end = strchr(&data[5], '-');
+			if (end)
+			{
+				while (*end == '-')
+					end++;
+
+				const size_t s = MIN(ARRAYSIZE(hdr) - 1, end - data);
+				memcpy(hdr, data, s);
+			}
+
+			WLog_WARN(TAG, "PEM has unexpected header '%s'. Known supported headers are:", hdr);
+			for (size_t x = 0; x < ARRAYSIZE(headers); x++)
+			{
+				const char* header = headers[x];
+				WLog_WARN(TAG, "%s", header);
+			}
+		}
+
+		*pLength = length + 1;
+		return _strdup(data);
+	}
+
 	crypto_base64_decode(data, length, (BYTE**)&decoded, &decoded_length);
 	if (!decoded || decoded_length == 0)
-		WLog_ERR(TAG, "Failed to decode base64 data from %s of length %" PRIuz, name, length);
-	WINPR_ASSERT(strnlen(decoded, decoded_length) == decoded_length - 1);
-	*pLength = decoded_length;
+	{
+		WLog_ERR(TAG, "Failed to decode base64 data of length %" PRIuz " for %s", length, name);
+		free(decoded);
+		return NULL;
+	}
+
+	*pLength = strnlen(decoded, decoded_length) + 1;
 	return decoded;
 }
 
@@ -429,6 +480,7 @@ static BOOL pf_config_load_certificates(wIniFile* ini, proxyConfig* config)
 		    crypto_read_pem(config->CertificateFile, &config->CertificatePEMLength);
 		if (!config->CertificatePEM)
 			return FALSE;
+		config->CertificatePEMLength += 1;
 	}
 	tmp2 = pf_config_get_str(ini, section_certificates, key_cert_content, FALSE);
 	if (tmp2)
@@ -475,6 +527,7 @@ static BOOL pf_config_load_certificates(wIniFile* ini, proxyConfig* config)
 		    crypto_read_pem(config->PrivateKeyFile, &config->PrivateKeyPEMLength);
 		if (!config->PrivateKeyPEM)
 			return FALSE;
+		config->PrivateKeyPEMLength += 1;
 	}
 	tmp2 = pf_config_get_str(ini, section_certificates, key_private_key_content, FALSE);
 	if (tmp2)

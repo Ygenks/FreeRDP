@@ -267,8 +267,9 @@ static int freerdp_keyboard_init_apple(DWORD* keyboardLayoutId,
 	for (keycode = 0; keycode < 256; keycode++)
 	{
 		vkcode = keycode_to_vkcode[keycode] =
-		    GetVirtualKeyCodeFromKeycode(keycode, KEYCODE_TYPE_APPLE);
-		x11_keycode_to_rdp_scancode[keycode] = GetVirtualScanCodeFromVirtualKeyCode(vkcode, 4);
+		    GetVirtualKeyCodeFromKeycode(keycode, WINPR_KEYCODE_TYPE_APPLE);
+		x11_keycode_to_rdp_scancode[keycode] =
+		    GetVirtualScanCodeFromVirtualKeyCode(vkcode, WINPR_KBD_TYPE_IBM_ENHANCED);
 	}
 
 	return 0;
@@ -286,8 +287,9 @@ static int freerdp_keyboard_init_x11_evdev(DWORD* keyboardLayoutId,
 	for (keycode = 0; keycode < 256; keycode++)
 	{
 		vkcode = keycode_to_vkcode[keycode] =
-		    GetVirtualKeyCodeFromKeycode(keycode, KEYCODE_TYPE_EVDEV);
-		x11_keycode_to_rdp_scancode[keycode] = GetVirtualScanCodeFromVirtualKeyCode(vkcode, 4);
+		    GetVirtualKeyCodeFromKeycode(keycode, WINPR_KEYCODE_TYPE_XKB);
+		x11_keycode_to_rdp_scancode[keycode] =
+		    GetVirtualScanCodeFromVirtualKeyCode(vkcode, WINPR_KBD_TYPE_IBM_ENHANCED);
 	}
 
 	return 0;

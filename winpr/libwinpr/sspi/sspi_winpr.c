@@ -329,13 +329,13 @@ int sspi_SetAuthIdentityW(SEC_WINNT_AUTH_IDENTITY* identity, const WCHAR* user, 
 	                                       password ? _wcslen(password) : 0);
 }
 
-static BOOL copy(WCHAR** dst, UINT32* dstLen, const WCHAR* what, size_t len)
+static BOOL copy(WCHAR** dst, ULONG* dstLen, const WCHAR* what, size_t len)
 {
 	WINPR_ASSERT(dst);
 	WINPR_ASSERT(dstLen);
-	WINPR_ASSERT(what);
-	WINPR_ASSERT(len > 0);
-	WINPR_ASSERT(_wcsnlen(what, len) == len);
+
+	*dst = NULL;
+	*dstLen = 0;
 
 	*dst = calloc(sizeof(WCHAR), len + 1);
 	if (!*dst)
@@ -353,77 +353,44 @@ int sspi_SetAuthIdentityWithLengthW(SEC_WINNT_AUTH_IDENTITY* identity, const WCH
 	sspi_FreeAuthIdentity(identity);
 	identity->Flags &= ~SEC_WINNT_AUTH_IDENTITY_ANSI;
 	identity->Flags |= SEC_WINNT_AUTH_IDENTITY_UNICODE;
-	if (user && userLen > 0)
-	{
-		if (!copy(&identity->User, &identity->UserLength, user, userLen))
-			return -1;
-	}
-	if (domain && domainLen > 0)
-	{
-		if (!copy(&identity->Domain, &identity->DomainLength, domain, domainLen))
-			return -1;
-	}
-	if (password && passwordLen > 0)
-	{
-		if (!copy(&identity->Password, &identity->PasswordLength, password, passwordLen))
-			return -1;
-	}
+
+	if (!copy(&identity->User, &identity->UserLength, user, userLen))
+		return -1;
+
+	if (!copy(&identity->Domain, &identity->DomainLength, domain, domainLen))
+		return -1;
+
+	if (!copy(&identity->Password, &identity->PasswordLength, password, passwordLen))
+		return -1;
 
 	return 1;
+}
+
+static void zfree(WCHAR* str, size_t len)
+{
+	if (str)
+		memset(str, 0, len * sizeof(WCHAR));
+	free(str);
 }
 
 int sspi_SetAuthIdentityA(SEC_WINNT_AUTH_IDENTITY* identity, const char* user, const char* domain,
                           const char* password)
 {
 	int rc;
+	size_t unicodeUserLenW = 0;
+	size_t unicodeDomainLenW = 0;
 	size_t unicodePasswordLenW = 0;
+	LPWSTR unicodeUser = ConvertUtf8ToWCharAlloc(user, &unicodeUserLenW);
+	LPWSTR unicodeDomain = ConvertUtf8ToWCharAlloc(domain, &unicodeDomainLenW);
 	LPWSTR unicodePassword = ConvertUtf8ToWCharAlloc(password, &unicodePasswordLenW);
 
-	if (!unicodePassword || (unicodePasswordLenW == 0))
-		return -1;
+	rc = sspi_SetAuthIdentityWithLengthW(identity, unicodeUser, unicodeUserLenW, unicodeDomain,
+	                                     unicodeDomainLenW, unicodePassword, unicodePasswordLenW);
 
-	rc = sspi_SetAuthIdentityWithUnicodePassword(identity, user, domain, unicodePassword,
-	                                             (ULONG)(unicodePasswordLenW));
-	free(unicodePassword);
+	zfree(unicodeUser, unicodeUserLenW);
+	zfree(unicodeDomain, unicodeDomainLenW);
+	zfree(unicodePassword, unicodePasswordLenW);
 	return rc;
-}
-
-int sspi_SetAuthIdentityWithUnicodePassword(SEC_WINNT_AUTH_IDENTITY* identity, const char* user,
-                                            const char* domain, LPCWSTR password,
-                                            ULONG passwordLength)
-{
-	sspi_FreeAuthIdentity(identity);
-	identity->Flags &= ~SEC_WINNT_AUTH_IDENTITY_ANSI;
-	identity->Flags |= SEC_WINNT_AUTH_IDENTITY_UNICODE;
-
-	if (user && (strlen(user) > 0))
-	{
-		size_t len = 0;
-		identity->User = ConvertUtf8ToWCharAlloc(user, &len);
-		if (!identity->User || (len == 0) || (len > ULONG_MAX))
-			return -1;
-
-		identity->UserLength = (ULONG)len;
-	}
-
-	if (domain && (strlen(domain) > 0))
-	{
-		size_t len = 0;
-		identity->Domain = ConvertUtf8ToWCharAlloc(domain, &len);
-		if (!identity->Domain || (len == 0) || (len > ULONG_MAX))
-			return -1;
-
-		identity->DomainLength = len;
-	}
-
-	identity->Password = (UINT16*)calloc(1, (passwordLength + 1) * sizeof(WCHAR));
-
-	if (!identity->Password)
-		return -1;
-
-	CopyMemory(identity->Password, password, passwordLength * sizeof(WCHAR));
-	identity->PasswordLength = passwordLength;
-	return 1;
 }
 
 UINT32 sspi_GetAuthIdentityVersion(const void* identity)
@@ -1712,15 +1679,12 @@ static SECURITY_STATUS SEC_ENTRY winpr_CompleteAuthToken(PCtxtHandle phContext,
 
 static SECURITY_STATUS SEC_ENTRY winpr_DeleteSecurityContext(PCtxtHandle phContext)
 {
-	char* Name = NULL;
-	SECURITY_STATUS status;
-	const SecurityFunctionTableA* table;
-	Name = (char*)sspi_SecureHandleGetUpperPointer(phContext);
+	const char* Name = (char*)sspi_SecureHandleGetUpperPointer(phContext);
 
 	if (!Name)
 		return SEC_E_SECPKG_NOT_FOUND;
 
-	table = sspi_GetSecurityFunctionTableAByNameA(Name);
+	const SecurityFunctionTableA* table = sspi_GetSecurityFunctionTableAByNameA(Name);
 
 	if (!table)
 		return SEC_E_SECPKG_NOT_FOUND;
@@ -1731,7 +1695,7 @@ static SECURITY_STATUS SEC_ENTRY winpr_DeleteSecurityContext(PCtxtHandle phConte
 		return SEC_E_UNSUPPORTED_FUNCTION;
 	}
 
-	status = table->DeleteSecurityContext(phContext);
+	const UINT32 status = table->DeleteSecurityContext(phContext);
 
 	if (IsSecurityStatusError(status))
 	{

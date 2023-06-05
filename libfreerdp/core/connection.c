@@ -706,9 +706,12 @@ static BOOL rdp_client_establish_keys(rdpRdp* rdp)
 	wStream* s = NULL;
 	int status = 0;
 	BOOL ret = FALSE;
+
+	WINPR_ASSERT(rdp);
 	rdpSettings* settings = rdp->settings;
 	BYTE* crypt_client_random = NULL;
 
+	WINPR_ASSERT(settings);
 	if (!settings->UseRdpSecurityLayer)
 	{
 		/* no RDP encryption */
@@ -755,7 +758,7 @@ static BOOL rdp_client_establish_keys(rdpRdp* rdp)
 
 	if (!rdp_write_header(rdp, s, length, MCS_GLOBAL_CHANNEL_ID))
 		goto end;
-	if (!rdp_write_security_header(s, SEC_EXCHANGE_PKT | SEC_LICENSE_ENCRYPT_SC))
+	if (!rdp_write_security_header(rdp, s, SEC_EXCHANGE_PKT | SEC_LICENSE_ENCRYPT_SC))
 		goto end;
 
 	Stream_Write_UINT32(s, info->ModulusLength + 8);
@@ -860,6 +863,8 @@ BOOL rdp_server_establish_keys(rdpRdp* rdp, wStream* s)
 	UINT16 sec_flags = 0;
 	BOOL ret = FALSE;
 
+	WINPR_ASSERT(rdp);
+
 	if (!rdp->settings->UseRdpSecurityLayer)
 	{
 		/* No RDP Security. */
@@ -869,7 +874,7 @@ BOOL rdp_server_establish_keys(rdpRdp* rdp, wStream* s)
 	if (!rdp_read_header(rdp, s, &length, &channel_id))
 		return FALSE;
 
-	if (!rdp_read_security_header(s, &sec_flags, NULL))
+	if (!rdp_read_security_header(rdp, s, &sec_flags, NULL))
 	{
 		WLog_ERR(TAG, "invalid security header");
 		return FALSE;
@@ -1109,10 +1114,6 @@ BOOL rdp_client_connect_mcs_channel_join_confirm(rdpRdp* rdp, wStream* s)
 
 BOOL rdp_client_connect_auto_detect(rdpRdp* rdp, wStream* s)
 {
-	size_t pos;
-	UINT16 length;
-	UINT16 channelId;
-
 	WINPR_ASSERT(rdp);
 	WINPR_ASSERT(rdp->mcs);
 
@@ -1121,7 +1122,9 @@ BOOL rdp_client_connect_auto_detect(rdpRdp* rdp, wStream* s)
 	if (messageChannelId != 0)
 	{
 		/* Process any MCS message channel PDUs. */
-		pos = Stream_GetPosition(s);
+		const size_t pos = Stream_GetPosition(s);
+		UINT16 length = 0;
+		UINT16 channelId = 0;
 
 		if (rdp_read_header(rdp, s, &length, &channelId))
 		{
@@ -1129,7 +1132,7 @@ BOOL rdp_client_connect_auto_detect(rdpRdp* rdp, wStream* s)
 			{
 				UINT16 securityFlags = 0;
 
-				if (!rdp_read_security_header(s, &securityFlags, &length))
+				if (!rdp_read_security_header(rdp, s, &securityFlags, &length))
 					return FALSE;
 
 				if (securityFlags & SEC_ENCRYPT)
@@ -1160,10 +1163,11 @@ state_run_t rdp_client_connect_license(rdpRdp* rdp, wStream* s)
 	LICENSE_STATE state;
 	UINT16 length, channelId, securityFlags;
 
+	WINPR_ASSERT(rdp);
 	if (!rdp_read_header(rdp, s, &length, &channelId))
 		return STATE_RUN_FAILED;
 
-	if (!rdp_read_security_header(s, &securityFlags, &length))
+	if (!rdp_read_security_header(rdp, s, &securityFlags, &length))
 		return STATE_RUN_FAILED;
 
 	if (securityFlags & SEC_ENCRYPT)
@@ -1171,6 +1175,19 @@ state_run_t rdp_client_connect_license(rdpRdp* rdp, wStream* s)
 		if (!rdp_decrypt(rdp, s, &length, securityFlags))
 			return STATE_RUN_FAILED;
 	}
+
+	/* there might be autodetect messages mixed in between licensing messages.
+	 * that has been observed with 2k12 R2 and 2k19
+	 */
+	const UINT16 messageChannelId = rdp->mcs->messageChannelId;
+	if ((channelId == messageChannelId) || (securityFlags & SEC_AUTODETECT_REQ))
+	{
+		return rdp_recv_message_channel_pdu(rdp, s, securityFlags);
+	}
+
+	if (channelId != MCS_GLOBAL_CHANNEL_ID)
+		WLog_WARN(TAG, "unexpected message for channel %u, expected %u", channelId,
+		          MCS_GLOBAL_CHANNEL_ID);
 
 	if ((securityFlags & SEC_LICENSE_PKT) == 0)
 	{
@@ -1368,15 +1385,15 @@ BOOL rdp_server_accept_nego(rdpRdp* rdp, wStream* s)
 		return FALSE;
 
 	RequestedProtocols = nego_get_requested_protocols(nego);
-	WLog_INFO(TAG, "Client Security: RDSTLS:%d NLA:%d TLS:%d RDP:%d",
-	          (RequestedProtocols & PROTOCOL_RDSTLS) ? 1 : 0,
-	          (RequestedProtocols & PROTOCOL_HYBRID) ? 1 : 0,
-	          (RequestedProtocols & PROTOCOL_SSL) ? 1 : 0,
-	          (RequestedProtocols == PROTOCOL_RDP) ? 1 : 0);
-	WLog_INFO(TAG,
-	          "Server Security: RDSTLS:%" PRId32 " NLA:%" PRId32 " TLS:%" PRId32 " RDP:%" PRId32 "",
-	          settings->RdstlsSecurity, settings->NlaSecurity, settings->TlsSecurity,
-	          settings->RdpSecurity);
+	WLog_DBG(TAG, "Client Security: RDSTLS:%d NLA:%d TLS:%d RDP:%d",
+	         (RequestedProtocols & PROTOCOL_RDSTLS) ? 1 : 0,
+	         (RequestedProtocols & PROTOCOL_HYBRID) ? 1 : 0,
+	         (RequestedProtocols & PROTOCOL_SSL) ? 1 : 0,
+	         (RequestedProtocols == PROTOCOL_RDP) ? 1 : 0);
+	WLog_DBG(TAG,
+	         "Server Security: RDSTLS:%" PRId32 " NLA:%" PRId32 " TLS:%" PRId32 " RDP:%" PRId32 "",
+	         settings->RdstlsSecurity, settings->NlaSecurity, settings->TlsSecurity,
+	         settings->RdpSecurity);
 
 	if ((settings->RdstlsSecurity) && (RequestedProtocols & PROTOCOL_RDSTLS))
 	{
@@ -1426,11 +1443,11 @@ BOOL rdp_server_accept_nego(rdpRdp* rdp, wStream* s)
 
 	if (!(SelectedProtocol & PROTOCOL_FAILED_NEGO))
 	{
-		WLog_INFO(TAG, "Negotiated Security: RDSTLS:%d NLA:%d TLS:%d RDP:%d",
-		          (SelectedProtocol & PROTOCOL_RDSTLS) ? 1 : 0,
-		          (SelectedProtocol & PROTOCOL_HYBRID) ? 1 : 0,
-		          (SelectedProtocol & PROTOCOL_SSL) ? 1 : 0,
-		          (SelectedProtocol == PROTOCOL_RDP) ? 1 : 0);
+		WLog_DBG(TAG, "Negotiated Security: RDSTLS:%d NLA:%d TLS:%d RDP:%d",
+		         (SelectedProtocol & PROTOCOL_RDSTLS) ? 1 : 0,
+		         (SelectedProtocol & PROTOCOL_HYBRID) ? 1 : 0,
+		         (SelectedProtocol & PROTOCOL_SSL) ? 1 : 0,
+		         (SelectedProtocol == PROTOCOL_RDP) ? 1 : 0);
 	}
 
 	if (!nego_set_selected_protocol(nego, SelectedProtocol))
@@ -1475,8 +1492,8 @@ BOOL rdp_server_accept_mcs_connect_initial(rdpRdp* rdp, wStream* s)
 	if (!mcs_server_apply_to_settings(mcs, rdp->settings))
 		return FALSE;
 
-	WLog_INFO(TAG, "Accepted client: %s", rdp->settings->ClientHostname);
-	WLog_INFO(TAG, "Accepted channels:");
+	WLog_DBG(TAG, "Accepted client: %s", rdp->settings->ClientHostname);
+	WLog_DBG(TAG, "Accepted channels:");
 
 	WINPR_ASSERT(mcs->channels || (mcs->channelCount == 0));
 	for (UINT32 i = 0; i < mcs->channelCount; i++)
@@ -1484,7 +1501,7 @@ BOOL rdp_server_accept_mcs_connect_initial(rdpRdp* rdp, wStream* s)
 		ADDIN_ARGV* arg;
 		rdpMcsChannel* cur = &mcs->channels[i];
 		const char* params[1] = { cur->Name };
-		WLog_INFO(TAG, " %s [%" PRIu16 "]", cur->Name, cur->ChannelId);
+		WLog_DBG(TAG, " %s [%" PRIu16 "]", cur->Name, cur->ChannelId);
 		arg = freerdp_addin_argv_new(ARRAYSIZE(params), params);
 		if (!arg)
 			return FALSE;
@@ -1858,7 +1875,7 @@ BOOL rdp_channels_from_mcs(rdpSettings* settings, const rdpRdp* rdp)
 	WINPR_ASSERT(mcs);
 
 	if (!freerdp_settings_set_pointer_len(settings, FreeRDP_ChannelDefArray, NULL,
-	                                      mcs->channelCount))
+	                                      CHANNEL_MAX_COUNT))
 		return FALSE;
 
 	for (x = 0; x < mcs->channelCount; x++)
@@ -1872,7 +1889,7 @@ BOOL rdp_channels_from_mcs(rdpSettings* settings, const rdpRdp* rdp)
 			return FALSE;
 	}
 
-	return TRUE;
+	return freerdp_settings_set_uint32(settings, FreeRDP_ChannelCount, mcs->channelCount);
 }
 
 /* Here we are in client state CONFIRM_ACTIVE.

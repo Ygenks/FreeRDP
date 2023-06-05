@@ -122,7 +122,7 @@ static BOOL test_peer_context_new(freerdp_peer* client, rdpContext* ctx)
 	                       SAMPLE_SERVER_DEFAULT_HEIGHT))
 		goto fail;
 
-	context->rfx_context->mode = RLGR3;
+	rfx_context_set_mode(context->rfx_context, RLGR3);
 	rfx_context_set_pixel_format(context->rfx_context, PIXEL_FORMAT_RGB24);
 
 	if (!(context->nsc_context = nsc_context_new()))
@@ -298,7 +298,7 @@ out:
 static BOOL test_peer_load_icon(freerdp_peer* client)
 {
 	testPeerContext* context;
-	FILE* fp;
+	FILE* fp = NULL;
 	int i;
 	char line[50] = { 0 };
 	BYTE* rgb_data = NULL;
@@ -363,7 +363,8 @@ static BOOL test_peer_load_icon(freerdp_peer* client)
 out_fail:
 	free(rgb_data);
 	context->bg_data = NULL;
-	fclose(fp);
+	if (fp)
+		fclose(fp);
 	return FALSE;
 }
 
@@ -910,10 +911,10 @@ static BOOL tf_peer_refresh_rect(rdpContext* context, BYTE count, const RECTANGL
 static BOOL tf_peer_suppress_output(rdpContext* context, BYTE allow, const RECTANGLE_16* area)
 {
 	WINPR_UNUSED(context);
-	WINPR_ASSERT(area);
 
 	if (allow > 0)
 	{
+		WINPR_ASSERT(area);
 		WLog_DBG(TAG,
 		         "Client restore output (%" PRIu16 ", %" PRIu16 ") (%" PRIu16 ", %" PRIu16 ").",
 		         area->left, area->top, area->right, area->bottom);

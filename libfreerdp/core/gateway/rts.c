@@ -177,13 +177,22 @@ static BOOL rts_write_common_pdu_header(wStream* s, const rpcconn_common_hdr_t* 
 	return TRUE;
 }
 
-BOOL rts_read_common_pdu_header(wStream* s, rpcconn_common_hdr_t* header)
+BOOL rts_read_common_pdu_header(wStream* s, rpcconn_common_hdr_t* header, BOOL ignoreErrors)
 {
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(header);
 
-	if (!Stream_CheckAndLogRequiredLength(TAG, s, sizeof(rpcconn_common_hdr_t)))
-		return FALSE;
+	if (!ignoreErrors)
+	{
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, sizeof(rpcconn_common_hdr_t)))
+			return FALSE;
+	}
+	else
+	{
+		const size_t sz = Stream_GetRemainingLength(s);
+		if (sz < sizeof(rpcconn_common_hdr_t))
+			return FALSE;
+	}
 
 	Stream_Read_UINT8(s, header->rpc_vers);
 	Stream_Read_UINT8(s, header->rpc_vers_minor);
@@ -195,12 +204,25 @@ BOOL rts_read_common_pdu_header(wStream* s, rpcconn_common_hdr_t* header)
 	Stream_Read_UINT32(s, header->call_id);
 
 	if (header->frag_length < sizeof(rpcconn_common_hdr_t))
+	{
+		if (!ignoreErrors)
+			WLog_WARN(TAG, "Invalid header->frag_length of %" PRIu16 ", expected %" PRIuz,
+			          header->frag_length, sizeof(rpcconn_common_hdr_t));
 		return FALSE;
+	}
 
-	if (!Stream_CheckAndLogRequiredLength(TAG, s,
-	                                      header->frag_length - sizeof(rpcconn_common_hdr_t)))
-		return FALSE;
-
+	if (!ignoreErrors)
+	{
+		if (!Stream_CheckAndLogRequiredLength(TAG, s,
+		                                      header->frag_length - sizeof(rpcconn_common_hdr_t)))
+			return FALSE;
+	}
+	else
+	{
+		const size_t sz2 = Stream_GetRemainingLength(s);
+		if (sz2 < header->frag_length - sizeof(rpcconn_common_hdr_t))
+			return FALSE;
+	}
 	return TRUE;
 }
 
@@ -211,7 +233,7 @@ static BOOL rts_read_auth_verifier_no_checks(wStream* s, auth_verifier_co_t* aut
 	WINPR_ASSERT(auth);
 	WINPR_ASSERT(header);
 
-	WINPR_ASSERT(header->frag_length > header->auth_length);
+	WINPR_ASSERT(header->frag_length > header->auth_length + 8);
 
 	if (startPos)
 		*startPos = Stream_GetPosition(s);
@@ -221,7 +243,7 @@ static BOOL rts_read_auth_verifier_no_checks(wStream* s, auth_verifier_co_t* aut
 		const size_t expected = header->frag_length - header->auth_length - 8;
 
 		Stream_SetPosition(s, expected);
-		if (!Stream_CheckAndLogRequiredLength(TAG, s, sizeof(auth_verifier_co_t)))
+		if (!Stream_CheckAndLogRequiredLength(TAG, s, 8))
 			return FALSE;
 
 		Stream_Read_UINT8(s, auth->auth_type);
@@ -302,10 +324,15 @@ static BOOL rts_read_auth_verifier_with_stub(wStream* s, auth_verifier_co_t* aut
 
 	if (alloc_hint > 0)
 	{
-		const size_t size =
-		    header->frag_length - header->auth_length - 8 - auth->auth_pad_length - pos;
+		const size_t off = header->auth_length + 8 + auth->auth_pad_length + pos;
+		const size_t size = header->frag_length - MIN(header->frag_length, off);
 		const void* src = Stream_Buffer(s) + pos;
 
+		if (off > size)
+			WLog_WARN(TAG,
+			          "Unexpected alloc_hint(%" PRIuz ") for PDU %s: size %" PRIuz
+			          ", offset %" PRIuz,
+			          alloc_hint, rts_pdu_ptype_to_string(header->ptype), size, off);
 		*ptr = (BYTE*)sdup(src, size);
 		if (!*ptr)
 			return FALSE;
@@ -898,8 +925,7 @@ static BOOL rts_read_pdu_fault(wStream* s, rpcconn_fault_hdr_t* ctx)
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(ctx);
 
-	if (!Stream_CheckAndLogRequiredLength(
-	        TAG, s, sizeof(rpcconn_fault_hdr_t) - sizeof(rpcconn_common_hdr_t)))
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, 12))
 		return FALSE;
 	Stream_Read_UINT32(s, ctx->alloc_hint);
 	Stream_Read_UINT16(s, ctx->p_cont_id);
@@ -907,6 +933,7 @@ static BOOL rts_read_pdu_fault(wStream* s, rpcconn_fault_hdr_t* ctx)
 	Stream_Read_UINT8(s, ctx->reserved);
 	Stream_Read_UINT32(s, ctx->status);
 
+	WLog_WARN(TAG, "status=%s", Win32ErrorCode2Tag(ctx->status));
 	return rts_read_auth_verifier_with_stub(s, &ctx->auth_verifier, &ctx->header);
 }
 
@@ -1093,7 +1120,7 @@ BOOL rts_read_pdu_header(wStream* s, rpcconn_hdr_t* header)
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(header);
 
-	if (!rts_read_common_pdu_header(s, &header->common))
+	if (!rts_read_common_pdu_header(s, &header->common, FALSE))
 		return FALSE;
 
 	WLog_DBG(TAG, "Reading PDU type %s", rts_pdu_ptype_to_string(header->common.ptype));

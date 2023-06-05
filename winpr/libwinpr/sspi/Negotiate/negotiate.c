@@ -596,7 +596,10 @@ static SECURITY_STATUS negotiate_mic_exchange(NEGOTIATE_CONTEXT* context, NegTok
 
 	/* When using NTLM cipher states need to be reset after mic exchange */
 	if (_tcscmp(sspi_SecureHandleGetUpperPointer(&context->sub_context), NTLM_SSP_NAME) == 0)
-		ntlm_reset_cipher_state(&context->sub_context);
+	{
+		if (!ntlm_reset_cipher_state(&context->sub_context))
+			return SEC_E_INTERNAL_ERROR;
+	}
 
 	return SEC_E_OK;
 }
@@ -656,6 +659,9 @@ static SECURITY_STATUS SEC_ENTRY negotiate_InitializeSecurityContextW(
 		for (size_t i = 0; i < MECH_COUNT; i++)
 		{
 			MechCred* cred = &creds[i];
+			const SecPkg* pkg = MechTable[i].pkg;
+			WINPR_ASSERT(pkg);
+			WINPR_ASSERT(pkg->table_w);
 
 			if (!cred->valid)
 				continue;
@@ -669,7 +675,8 @@ static SECURITY_STATUS SEC_ENTRY negotiate_InitializeSecurityContextW(
 				if (bindings_buffer)
 					mech_input_buffers[0] = *bindings_buffer;
 
-				sub_status = MechTable[i].pkg->table_w->InitializeSecurityContextW(
+				WINPR_ASSERT(pkg->table_w->InitializeSecurityContextW);
+				sub_status = pkg->table_w->InitializeSecurityContextW(
 				    &cred->cred, NULL, pszTargetName, fContextReq | cred->mech->flags, Reserved1,
 				    TargetDataRep, &mech_input, Reserved2, &init_context.sub_context, &mech_output,
 				    pfContextAttr, ptsExpiry);
@@ -677,6 +684,11 @@ static SECURITY_STATUS SEC_ENTRY negotiate_InitializeSecurityContextW(
 				/* If the mechanism failed we can't use it; skip */
 				if (IsSecurityStatusError(sub_status))
 				{
+					if (SecIsValidHandle(&init_context.sub_context))
+					{
+						WINPR_ASSERT(pkg->table_w->DeleteSecurityContext);
+						pkg->table_w->DeleteSecurityContext(&init_context.sub_context);
+					}
 					cred->valid = FALSE;
 					continue;
 				}

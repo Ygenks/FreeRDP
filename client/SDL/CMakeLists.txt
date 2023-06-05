@@ -15,10 +15,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set(MODULE_NAME "sdl-client")
-set(MODULE_PREFIX "FREERDP_CLIENT_X11_CONTROL")
+cmake_minimum_required(VERSION 3.13)
 
-include(ConfigOptions)
+project(sdl-client CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS ON)
+
+option(CMAKE_COLOR_MAKEFILE "colorful CMake makefile" ON)
+option(CMAKE_VERBOSE_MAKEFILE "verbose CMake makefile" ON)
+option(CMAKE_POSITION_INDEPENDENT_CODE "build with position independent code (-fPIC or -fPIE)" ON)
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/)
+
+include(ConfigureFreeRDP)
+
+include(GNUInstallDirsWrapper)
+
+# RPATH configuration
+include(ConfigureRPATH)
+
 option(WITH_DEBUG_SDL_EVENTS "[dangerous, not for release builds!] Debug SDL events" OFF)
 option(WITH_DEBUG_SDL_KBD_EVENTS "[dangerous, not for release builds!] Debug SDL keyboard events" OFF)
 
@@ -29,31 +45,65 @@ if (WITH_DEBUG_SDL_KBD_EVENTS)
 	add_definitions(-DWITH_DEBUG_SDL_KBD_EVENTS)
 endif()
 
+find_package(SDL2 REQUIRED)
+include_directories(${SDL2_INCLUDE_DIR})
 include_directories(${SDL2_INCLUDE_DIRS})
+
+find_package(Threads REQUIRED)
+
 set(SRCS
-    sdl_utils.c
-    sdl_utils.h
-    sdl_kbd.c
-    sdl_kbd.h
-    sdl_touch.c
-    sdl_touch.h
-    sdl_pointer.c
-    sdl_pointer.h
-    sdl_disp.c
-    sdl_disp.h
-    sdl_monitor.c
-    sdl_monitor.h
-    sdl_freerdp.h
-    sdl_freerdp.c
-    sdl_channels.h
-    sdl_channels.c)
+    sdl_types.hpp
+    sdl_utils.cpp
+    sdl_utils.hpp
+    sdl_kbd.cpp
+    sdl_kbd.hpp
+    sdl_touch.cpp
+    sdl_touch.hpp
+    sdl_pointer.cpp
+    sdl_pointer.hpp
+    sdl_disp.cpp
+    sdl_disp.hpp
+    sdl_monitor.cpp
+    sdl_monitor.hpp
+    sdl_freerdp.hpp
+    sdl_freerdp.cpp
+    sdl_channels.hpp
+    sdl_channels.cpp)
 
 set(LIBS
 	${SDL2_LIBRARIES}
-        freerdp-client)
+        winpr
+        freerdp
+        freerdp-client
+        Threads::Threads
+    )
 
-add_executable(${MODULE_NAME} ${SRCS})
-set_target_properties(${MODULE_NAME} PROPERTIES OUTPUT_NAME "sdl-freerdp")
-target_link_libraries(${MODULE_NAME} PRIVATE ${LIBS})
-set_property(TARGET ${MODULE_NAME} PROPERTY FOLDER "Client/SDL")
-install(TARGETS ${MODULE_NAME} DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client)
+option(WITH_WEBVIEW "Build with QtWebEngine support for AAD login popup browser" OFF)
+if (WITH_WEBVIEW)
+  find_package(Qt5 COMPONENTS WebEngineWidgets REQUIRED)
+
+  list(APPEND SRCS
+      sdl_webview.cpp
+      sdl_webview.hpp
+      )
+  list(APPEND LIBS Qt5::WebEngineWidgets)
+endif()
+
+add_executable(${PROJECT_NAME}
+	${SRCS}
+    )
+
+if (WITH_WEBVIEW)
+	target_compile_definitions(
+		${PROJECT_NAME} PRIVATE
+		-DWITH_WEBVIEW
+	)
+endif()
+
+set_target_properties(${PROJECT_NAME}
+    PROPERTIES
+    OUTPUT_NAME "sdl-freerdp"
+    )
+target_link_libraries(${PROJECT_NAME} PRIVATE ${LIBS})
+set_property(TARGET ${PROJECT_NAME} PROPERTY FOLDER "Client/SDL")
+install(TARGETS ${PROJECT_NAME} DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client)

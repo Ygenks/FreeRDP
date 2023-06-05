@@ -17,7 +17,9 @@
  * limitations under the License.
  */
 
-#ifdef WITH_KRB5_MIT
+#ifndef WITH_KRB5_MIT
+#error "This file must only be included with MIT kerberos"
+#endif
 
 #include <winpr/path.h>
 #include <winpr/wlog.h>
@@ -123,6 +125,7 @@ krb5_error_code krb5glue_get_init_creds(krb5_context ctx, krb5_principal princ, 
 	krb5_init_creds_context creds_ctx = NULL;
 	char* tmp_profile_path = create_temporary_file();
 	profile_t profile = NULL;
+	BOOL is_temp_ctx = FALSE;
 
 	WINPR_ASSERT(ctx);
 
@@ -153,24 +156,36 @@ krb5_error_code krb5glue_get_init_creds(krb5_context ctx, krb5_principal princ, 
 		{
 			const char* names[4] = { 0 };
 			char* realm = NULL;
+			char* kdc_url = NULL;
+			size_t size = 0;
 
 			if ((rv = krb5_get_profile(ctx, &profile)))
 				goto cleanup;
 
-			names[0] = "realms";
+			rv = ENOMEM;
+			if (winpr_asprintf(&kdc_url, &size, "https://%s/KdcProxy", krb_settings->kdcUrl) <= 0)
+				goto cleanup;
+
 			realm = calloc(princ->realm.length + 1, 1);
 			if (!realm)
 			{
-				rv = ENOMEM;
+				free(kdc_url);
 				goto cleanup;
 			}
 			CopyMemory(realm, princ->realm.data, princ->realm.length);
+
+			names[0] = "realms";
 			names[1] = realm;
 			names[2] = "kdc";
 
 			profile_clear_relation(profile, names);
+			profile_add_relation(profile, names, kdc_url);
+
+			/* Since we know who the KDC is, tell krb5 that its certificate is valid for pkinit */
+			names[2] = "pkinit_kdc_hostname";
 			profile_add_relation(profile, names, krb_settings->kdcUrl);
 
+			free(kdc_url);
 			free(realm);
 
 			if ((rv = profile_flush_to_file(profile, tmp_profile_path)))
@@ -183,26 +198,32 @@ krb5_error_code krb5glue_get_init_creds(krb5_context ctx, krb5_principal princ, 
 
 			if ((rv = krb5_init_context_profile(profile, 0, &ctx)))
 				goto cleanup;
+			is_temp_ctx = TRUE;
 		}
 	}
 
-	if (rv == 0)
-		rv = krb5_get_init_creds_opt_set_in_ccache(ctx, gic_opt, ccache);
-	if (rv == 0)
-		rv = krb5_get_init_creds_opt_set_out_ccache(ctx, gic_opt, ccache);
+	if ((rv = krb5_get_init_creds_opt_set_in_ccache(ctx, gic_opt, ccache)))
+		goto cleanup;
 
-	if (rv == 0)
-		rv = krb5_init_creds_init(ctx, princ, prompter, password, start_time, gic_opt, &creds_ctx);
-	if (rv == 0)
-		rv = krb5_init_creds_get(ctx, creds_ctx);
+	if ((rv = krb5_get_init_creds_opt_set_out_ccache(ctx, gic_opt, ccache)))
+		goto cleanup;
+
+	if ((rv =
+	         krb5_init_creds_init(ctx, princ, prompter, password, start_time, gic_opt, &creds_ctx)))
+		goto cleanup;
+
+	if ((rv = krb5_init_creds_get(ctx, creds_ctx)))
+		goto cleanup;
 
 cleanup:
 	krb5_init_creds_free(ctx, creds_ctx);
 	krb5_get_init_creds_opt_free(ctx, gic_opt);
+	if (is_temp_ctx)
+		krb5_free_context(ctx);
+	profile_release(profile);
 	winpr_DeleteFile(tmp_profile_path);
 	free(tmp_profile_path);
 
 	return rv;
 }
 
-#endif /* WITH_KRB5_MIT */

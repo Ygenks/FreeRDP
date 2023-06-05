@@ -19,11 +19,15 @@
 #include <winpr/config.h>
 
 #include <winpr/crt.h>
-
+#include <winpr/assert.h>
 #include <winpr/crypto.h>
 
 #include "../log.h"
 #define TAG WINPR_TAG("crypto.cipher")
+
+#if defined(WITH_INTERNAL_RC4)
+#include "rc4.h"
+#endif
 
 #ifdef WITH_OPENSSL
 #include <openssl/aes.h>
@@ -44,58 +48,80 @@
  * RC4
  */
 
+struct winpr_rc4_ctx_private_st
+{
+#if defined(WITH_INTERNAL_RC4)
+	winpr_int_RC4_CTX* ictx;
+#else
+#if defined(WITH_OPENSSL)
+	EVP_CIPHER_CTX* ctx;
+#endif
+#if defined(WITH_MBEDTLS) && defined(MBEDTLS_ARC4_C)
+	mbedtls_arc4_context* mctx;
+#endif
+#endif
+};
+
 static WINPR_RC4_CTX* winpr_RC4_New_Internal(const BYTE* key, size_t keylen, BOOL override_fips)
 {
 	WINPR_RC4_CTX* ctx = NULL;
-#if defined(WITH_OPENSSL)
-	const EVP_CIPHER* evp = NULL;
-#endif
 
 	if (!key || (keylen == 0))
 		return NULL;
 
-#if defined(WITH_OPENSSL)
+	ctx = calloc(1, sizeof(WINPR_RC4_CTX));
+	if (!ctx)
+		return NULL;
+
+#if defined(WITH_INTERNAL_RC4)
+	WINPR_UNUSED(override_fips);
+	ctx->ictx = winpr_int_rc4_new(key, keylen);
+	if (!ctx->ictx)
+		goto fail;
+#elif defined(WITH_OPENSSL)
+	const EVP_CIPHER* evp = NULL;
 
 	if (keylen > INT_MAX)
-		return NULL;
+		goto fail;
 
-	if (!(ctx = (WINPR_RC4_CTX*)EVP_CIPHER_CTX_new()))
-		return NULL;
+	ctx->ctx = EVP_CIPHER_CTX_new();
+	if (!ctx->ctx)
+		goto fail;
 
 	evp = EVP_rc4();
 
 	if (!evp)
-		return NULL;
+		goto fail;
 
-	EVP_CIPHER_CTX_init((EVP_CIPHER_CTX*)ctx);
-	if (EVP_EncryptInit_ex((EVP_CIPHER_CTX*)ctx, evp, NULL, NULL, NULL) != 1)
-	{
-		EVP_CIPHER_CTX_free((EVP_CIPHER_CTX*)ctx);
-		return NULL;
-	}
+	EVP_CIPHER_CTX_init(ctx->ctx);
+	if (EVP_EncryptInit_ex(ctx->ctx, evp, NULL, NULL, NULL) != 1)
+		goto fail;
 
-	/* EVP_CIPH_FLAG_NON_FIPS_ALLOW does not exist before openssl 1.0.1 */
+		/* EVP_CIPH_FLAG_NON_FIPS_ALLOW does not exist before openssl 1.0.1 */
 #if !(OPENSSL_VERSION_NUMBER < 0x10001000L)
 
 	if (override_fips == TRUE)
-		EVP_CIPHER_CTX_set_flags((EVP_CIPHER_CTX*)ctx, EVP_CIPH_FLAG_NON_FIPS_ALLOW);
+		EVP_CIPHER_CTX_set_flags(ctx->ctx, EVP_CIPH_FLAG_NON_FIPS_ALLOW);
 
 #endif
-	EVP_CIPHER_CTX_set_key_length((EVP_CIPHER_CTX*)ctx, (int)keylen);
-	if (EVP_EncryptInit_ex((EVP_CIPHER_CTX*)ctx, NULL, NULL, key, NULL) != 1)
-	{
-		EVP_CIPHER_CTX_free((EVP_CIPHER_CTX*)ctx);
-		return NULL;
-	}
+	EVP_CIPHER_CTX_set_key_length(ctx->ctx, (int)keylen);
+	if (EVP_EncryptInit_ex(ctx->ctx, NULL, NULL, key, NULL) != 1)
+		goto fail;
+
 #elif defined(WITH_MBEDTLS) && defined(MBEDTLS_ARC4_C)
 
-	if (!(ctx = (WINPR_RC4_CTX*)calloc(1, sizeof(mbedtls_arc4_context))))
-		return NULL;
+	ctx->mctx = calloc(1, sizeof(mbedtls_arc4_context));
+	if (!ctx->mctx)
+		goto fail;
 
-	mbedtls_arc4_init((mbedtls_arc4_context*)ctx);
-	mbedtls_arc4_setup((mbedtls_arc4_context*)ctx, key, (unsigned int)keylen);
+	mbedtls_arc4_init(ctx->mctx);
+	mbedtls_arc4_setup(ctx->mctx, key, (unsigned int)keylen);
 #endif
 	return ctx;
+
+fail:
+	winpr_RC4_Free(ctx);
+	return NULL;
 }
 
 WINPR_RC4_CTX* winpr_RC4_New_Allow_FIPS(const BYTE* key, size_t keylen)
@@ -110,16 +136,24 @@ WINPR_RC4_CTX* winpr_RC4_New(const BYTE* key, size_t keylen)
 
 BOOL winpr_RC4_Update(WINPR_RC4_CTX* ctx, size_t length, const BYTE* input, BYTE* output)
 {
-#if defined(WITH_OPENSSL)
+	WINPR_ASSERT(ctx);
+
+#if defined(WITH_INTERNAL_RC4)
+	return winpr_int_rc4_update(ctx->ictx, length, input, output);
+#elif defined(WITH_OPENSSL)
+	WINPR_ASSERT(ctx->ctx);
 	int outputLength;
 	if (length > INT_MAX)
 		return FALSE;
 
-	EVP_CipherUpdate((EVP_CIPHER_CTX*)ctx, output, &outputLength, input, (int)length);
+	WINPR_ASSERT(ctx);
+	if (EVP_CipherUpdate(ctx->ctx, output, &outputLength, input, (int)length) != 1)
+		return FALSE;
 	return TRUE;
 #elif defined(WITH_MBEDTLS) && defined(MBEDTLS_ARC4_C)
 
-	if (mbedtls_arc4_crypt((mbedtls_arc4_context*)ctx, length, input, output) == 0)
+	WINPR_ASSERT(ctx->mctx);
+	if (mbedtls_arc4_crypt(ctx->mctx, length, input, output) == 0)
 		return TRUE;
 
 #endif
@@ -131,12 +165,14 @@ void winpr_RC4_Free(WINPR_RC4_CTX* ctx)
 	if (!ctx)
 		return;
 
-#if defined(WITH_OPENSSL)
-	EVP_CIPHER_CTX_free((EVP_CIPHER_CTX*)ctx);
+#if defined(WITH_INTERNAL_RC4)
+	winpr_int_rc4_free(ctx->ictx);
+#elif defined(WITH_OPENSSL)
+	EVP_CIPHER_CTX_free(ctx->ctx);
 #elif defined(WITH_MBEDTLS) && defined(MBEDTLS_ARC4_C)
-	mbedtls_arc4_free((mbedtls_arc4_context*)ctx);
-	free(ctx);
+	mbedtls_arc4_free(ctx->mctx);
 #endif
+	free(ctx);
 }
 
 /**
@@ -641,6 +677,7 @@ BOOL winpr_Cipher_Update(WINPR_CIPHER_CTX* ctx, const BYTE* input, size_t ilen, 
 		return FALSE;
 	}
 
+	WINPR_ASSERT(ctx);
 	if (EVP_CipherUpdate((EVP_CIPHER_CTX*)ctx, output, &outl, input, (int)ilen) == 1)
 	{
 		*olen = (size_t)outl;

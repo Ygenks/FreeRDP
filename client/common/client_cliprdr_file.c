@@ -1537,23 +1537,20 @@ static void cliprdr_local_file_try_close(CliprdrLocalFile* file, UINT res, UINT6
 		WINPR_ASSERT(file->context);
 		WLog_Print(file->context->log, WLOG_DEBUG, "closing file %s after error %" PRIu32,
 		           file->name, res);
-		fclose(file->fp);
-		file->fp = NULL;
 	}
 	else if (((file->size > 0) && (offset + size >= file->size)))
 	{
 		WINPR_ASSERT(file->context);
 		WLog_Print(file->context->log, WLOG_DEBUG, "closing file %s after read", file->name);
-		fclose(file->fp);
-		file->fp = NULL;
 	}
 	else
 	{
 		// TODO: we need to keep track of open files to avoid running out of file descriptors
 		// TODO: for the time being just close again.
-		fclose(file->fp);
-		file->fp = NULL;
 	}
+	if (file->fp)
+		fclose(file->fp);
+	file->fp = NULL;
 }
 
 static UINT cliprdr_file_context_server_file_size_request(
@@ -1958,7 +1955,7 @@ static BOOL cliprdr_local_file_new(CliprdrFileContext* context, CliprdrLocalFile
 
 	*f = empty;
 	f->context = context;
-	f->name = _strdup(path);
+	f->name = winpr_str_url_decode(path, strlen(path));
 	if (!f->name)
 		goto fail;
 
@@ -2287,10 +2284,15 @@ BOOL cliprdr_file_context_clear(CliprdrFileContext* file)
 {
 	WINPR_ASSERT(file);
 
-	WLog_Print(file->log, WLOG_DEBUG, "clear file clipbaord...");
+	WLog_Print(file->log, WLOG_DEBUG, "clear file clipboard...");
 
+	HashTable_Lock(file->local_streams);
 	HashTable_Foreach(file->local_streams, local_stream_discard, file);
+	HashTable_Unlock(file->local_streams);
+
+	HashTable_Lock(file->remote_streams);
 	HashTable_Foreach(file->remote_streams, remote_stream_discard, file);
+	HashTable_Unlock(file->remote_streams);
 
 	memset(file->server_data_hash, 0, sizeof(file->server_data_hash));
 	memset(file->client_data_hash, 0, sizeof(file->client_data_hash));

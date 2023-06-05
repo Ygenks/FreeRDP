@@ -41,6 +41,12 @@
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
 
+#if defined(OPENSSL_VERSION_MAJOR) && (OPENSSL_VERSION_MAJOR >= 3)
+#include <openssl/core_names.h>
+#include <openssl/param_build.h>
+#include <openssl/evp.h>
+#endif
+
 #include "certificate.h"
 #include "cert_common.h"
 #include "crypto.h"
@@ -233,7 +239,7 @@ BOOL cert_blob_read(rdpCertBlob* blob, wStream* s)
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, certLength))
 		goto fail;
 
-	DEBUG_CERTIFICATE("X.509 Certificate #%" PRIu32 ", length:%" PRIu32 "", i + 1, certLength);
+	DEBUG_CERTIFICATE("X.509 Certificate length:%" PRIu32 "", certLength);
 	blob->data = (BYTE*)malloc(certLength);
 
 	if (!blob->data)
@@ -465,6 +471,38 @@ static void certificate_free_x509_certificate_chain(rdpX509CertChain* x509_cert_
 	free(x509_cert_chain->array);
 }
 
+#if defined(OPENSSL_VERSION_MAJOR) && (OPENSSL_VERSION_MAJOR >= 3)
+static OSSL_PARAM* get_params(const BIGNUM* e, const BIGNUM* mod)
+{
+	WINPR_ASSERT(e);
+	WINPR_ASSERT(mod);
+
+	OSSL_PARAM* parameters = NULL;
+	OSSL_PARAM_BLD* param = OSSL_PARAM_BLD_new();
+	if (!param)
+		return NULL;
+
+	const int bits = BN_num_bits(e);
+	if ((bits < 0) || (bits > 32))
+		goto fail;
+
+	UINT ie = 0;
+	const int ne = BN_bn2nativepad(e, (BYTE*)&ie, sizeof(ie));
+	if ((ne < 0) || (ne > 4))
+		goto fail;
+	if (OSSL_PARAM_BLD_push_BN(param, OSSL_PKEY_PARAM_RSA_N, mod) != 1)
+		goto fail;
+	if (OSSL_PARAM_BLD_push_uint(param, OSSL_PKEY_PARAM_RSA_E, ie) != 1)
+		goto fail;
+
+	parameters = OSSL_PARAM_BLD_to_param(param);
+fail:
+	OSSL_PARAM_BLD_free(param);
+
+	return parameters;
+}
+#endif
+
 static BOOL update_x509_from_info(rdpCertificate* cert)
 {
 	BOOL rc = FALSE;
@@ -476,30 +514,67 @@ static BOOL update_x509_from_info(rdpCertificate* cert)
 
 	rdpCertInfo* info = &cert->cert_info;
 
-	RSA* rsa = RSA_new();
 	BIGNUM* e = BN_new();
 	BIGNUM* mod = BN_new();
-	if (!mod || !e || !rsa)
+#if !defined(OPENSSL_VERSION_MAJOR) || (OPENSSL_VERSION_MAJOR < 3)
+	RSA* rsa = RSA_new();
+	if (!rsa)
+		goto fail;
+#endif
+
+	if (!mod || !e)
 		goto fail;
 	if (!BN_bin2bn(info->Modulus, info->ModulusLength, mod))
 		goto fail;
 	if (!BN_bin2bn(info->exponent, sizeof(info->exponent), e))
 		goto fail;
 
+#if !defined(OPENSSL_VERSION_MAJOR) || (OPENSSL_VERSION_MAJOR < 3)
 	const int rec = RSA_set0_key(rsa, mod, e, NULL);
 	if (rec != 1)
 		goto fail;
 
 	cert->x509 = x509_from_rsa(rsa);
+#else
+	EVP_PKEY* pkey = NULL;
+	EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
+	if (!ctx)
+		goto fail2;
+	const int xx = EVP_PKEY_fromdata_init(ctx);
+	if (xx != 1)
+		goto fail2;
+	OSSL_PARAM* parameters = get_params(e, mod);
+	if (!parameters)
+		goto fail2;
+
+	const int rc2 = EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_PUBLIC_KEY, parameters);
+	OSSL_PARAM_free(parameters);
+	if (rc2 <= 0)
+		goto fail2;
+
+	cert->x509 = X509_new();
+	if (!cert->x509)
+		goto fail2;
+	if (X509_set_pubkey(cert->x509, pkey) != 1)
+	{
+		X509_free(cert->x509);
+		cert->x509 = NULL;
+	}
+fail2:
+	EVP_PKEY_free(pkey);
+	EVP_PKEY_CTX_free(ctx);
+#endif
 	if (!cert->x509)
 		goto fail;
 
 	rc = TRUE;
 
 fail:
+#if !defined(OPENSSL_VERSION_MAJOR) || (OPENSSL_VERSION_MAJOR < 3)
 	if (rsa)
 		RSA_free(rsa);
 	else
+#endif
 	{
 		BN_free(mod);
 		BN_free(e);
@@ -795,7 +870,7 @@ static BOOL cert_write_server_certificate_v2(wStream* s, const rdpCertificate* c
 	const rdpX509CertChain* chain = &certificate->x509_cert_chain;
 	const size_t padding = 8ull + 4ull * chain->count;
 
-	if (Stream_EnsureRemainingCapacity(s, sizeof(UINT32)))
+	if (!Stream_EnsureRemainingCapacity(s, sizeof(UINT32)))
 		return FALSE;
 
 	Stream_Write_UINT32(s, chain->count);
@@ -806,10 +881,10 @@ static BOOL cert_write_server_certificate_v2(wStream* s, const rdpCertificate* c
 			return FALSE;
 	}
 
-	if (Stream_EnsureRemainingCapacity(s, padding))
+	if (!Stream_EnsureRemainingCapacity(s, padding))
 		return FALSE;
 	Stream_Zero(s, padding);
-	return FALSE;
+	return TRUE;
 }
 
 SSIZE_T freerdp_certificate_write_server_cert(const rdpCertificate* certificate, UINT32 dwVersion,
@@ -885,7 +960,7 @@ static BOOL certificate_read_server_x509_certificate_chain(rdpCertificate* cert,
 				return FALSE;
 			}
 
-			DEBUG_CERTIFICATE("modulus length:%" PRIu32 "", cert_info.ModulusLength);
+			DEBUG_CERTIFICATE("modulus length:%" PRIu32 "", cert->cert_info.ModulusLength);
 		}
 	}
 
@@ -1103,6 +1178,8 @@ static BOOL freerdp_rsa_from_x509(rdpCertificate* cert)
 	EVP_PKEY* pubkey = X509_get0_pubkey(cert->x509);
 	if (!pubkey)
 		goto fail;
+
+#if !defined(OPENSSL_VERSION_MAJOR) || (OPENSSL_VERSION_MAJOR < 3)
 	rsa = EVP_PKEY_get1_RSA(pubkey);
 
 	/* If this is not a RSA key return success */
@@ -1116,13 +1193,26 @@ static BOOL freerdp_rsa_from_x509(rdpCertificate* cert)
 	const BIGNUM* rsa_n = NULL;
 	const BIGNUM* rsa_e = NULL;
 	RSA_get0_key(rsa, &rsa_n, &rsa_e, NULL);
+#else
+	BIGNUM* rsa_n = NULL;
+	BIGNUM* rsa_e = NULL;
+	if (!EVP_PKEY_get_bn_param(pubkey, OSSL_PKEY_PARAM_RSA_E, &rsa_e))
+		goto fail;
+	if (!EVP_PKEY_get_bn_param(pubkey, OSSL_PKEY_PARAM_RSA_N, &rsa_n))
+		goto fail;
+#endif
 	if (!rsa_n || !rsa_e)
 		goto fail;
 	if (!cert_info_create(&cert->cert_info, rsa_n, rsa_e))
 		goto fail;
 	rc = TRUE;
 fail:
+#if !defined(OPENSSL_VERSION_MAJOR) || (OPENSSL_VERSION_MAJOR < 3)
 	RSA_free(rsa);
+#else
+	BN_free(rsa_n);
+	BN_free(rsa_e);
+#endif
 	return rc;
 }
 
@@ -1132,7 +1222,7 @@ rdpCertificate* freerdp_certificate_new_from_der(const BYTE* data, size_t length
 
 	if (!cert || !data || (length == 0))
 		goto fail;
-	char* ptr = data;
+	const BYTE* ptr = data;
 	cert->x509 = d2i_X509(NULL, &ptr, length);
 	if (!cert->x509)
 		goto fail;
@@ -1468,7 +1558,7 @@ void freerdp_certificate_free_dns_names(size_t count, size_t* lengths, char** na
 char* freerdp_certificate_get_hash(const rdpCertificate* cert, const char* hash, size_t* plength)
 {
 	WINPR_ASSERT(cert);
-	return x509_utils_get_hash(cert->x509, hash, plength);
+	return (char*)x509_utils_get_hash(cert->x509, hash, plength);
 }
 
 X509* freerdp_certificate_get_x509(rdpCertificate* cert)
@@ -1477,7 +1567,8 @@ X509* freerdp_certificate_get_x509(rdpCertificate* cert)
 	return cert->x509;
 }
 
-RSA* freerdp_certificate_get_RSA(const rdpCertificate* cert)
+#if !defined(OPENSSL_VERSION_MAJOR) || (OPENSSL_VERSION_MAJOR < 3)
+static RSA* freerdp_certificate_get_RSA(const rdpCertificate* cert)
 {
 	WINPR_ASSERT(cert);
 
@@ -1490,6 +1581,7 @@ RSA* freerdp_certificate_get_RSA(const rdpCertificate* cert)
 
 	return EVP_PKEY_get1_RSA(pubkey);
 }
+#endif
 
 BYTE* freerdp_certificate_get_der(const rdpCertificate* cert, size_t* pLength)
 {
@@ -1522,7 +1614,6 @@ BYTE* freerdp_certificate_get_der(const rdpCertificate* cert, size_t* pLength)
 BOOL freerdp_certificate_is_rsa(const rdpCertificate* cert)
 {
 	WINPR_ASSERT(cert);
-	WINPR_ASSERT(cert->x509);
 	return is_rsa_key(cert->x509);
 }
 
@@ -1535,4 +1626,63 @@ BOOL freerdp_certificate_is_rdp_security_compatible(const rdpCertificate* cert)
 		return FALSE;
 	}
 	return TRUE;
+}
+
+char* freerdp_certificate_get_param(const rdpCertificate* cert, enum FREERDP_CERT_PARAM what,
+                                    size_t* psize)
+{
+	WINPR_ASSERT(cert);
+	WINPR_ASSERT(psize);
+
+	*psize = 0;
+
+#if !defined(OPENSSL_VERSION_MAJOR) || (OPENSSL_VERSION_MAJOR < 3)
+	const BIGNUM* bn = NULL;
+	RSA* rsa = freerdp_certificate_get_RSA(cert);
+	switch (what)
+	{
+		case FREERDP_CERT_RSA_E:
+			RSA_get0_key(rsa, NULL, &bn, NULL);
+			break;
+		case FREERDP_CERT_RSA_N:
+			RSA_get0_key(rsa, &bn, NULL, NULL);
+			break;
+		default:
+			RSA_free(rsa);
+			return NULL;
+	}
+	RSA_free(rsa);
+#else
+	EVP_PKEY* pkey = X509_get0_pubkey(cert->x509);
+	if (!pkey)
+		return NULL;
+
+	BIGNUM* bn = NULL;
+	switch (what)
+	{
+		case FREERDP_CERT_RSA_E:
+			if (!EVP_PKEY_get_bn_param(pkey, OSSL_PKEY_PARAM_RSA_E, &bn))
+				return NULL;
+			break;
+		case FREERDP_CERT_RSA_N:
+			if (!EVP_PKEY_get_bn_param(pkey, OSSL_PKEY_PARAM_RSA_N, &bn))
+				return NULL;
+			break;
+		default:
+			return NULL;
+	}
+#endif
+
+	const size_t bnsize = BN_num_bytes(bn);
+	char* rc = calloc(bnsize + 1, sizeof(char));
+	if (!rc)
+		goto fail;
+	BN_bn2bin(bn, (BYTE*)rc);
+	*psize = bnsize;
+
+fail:
+#if defined(OPENSSL_VERSION_MAJOR) && (OPENSSL_VERSION_MAJOR < 3)
+	BN_free(bn);
+#endif
+	return rc;
 }

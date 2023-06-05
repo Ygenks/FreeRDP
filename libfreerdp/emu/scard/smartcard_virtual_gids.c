@@ -292,7 +292,7 @@ create_failed:
 	return NULL;
 }
 
-static BOOL vgids_write_tlv(wStream* s, UINT16 tag, const BYTE* data, DWORD dataSize)
+static BOOL vgids_write_tlv(wStream* s, UINT16 tag, const void* data, DWORD dataSize)
 {
 	/* A maximum of 5 additional bytes is needed */
 	if (!Stream_EnsureRemainingCapacity(s, dataSize + 5))
@@ -326,7 +326,7 @@ static BOOL vgids_write_tlv(wStream* s, UINT16 tag, const BYTE* data, DWORD data
 	return TRUE;
 }
 
-static BOOL vgids_ef_write_do(vgidsEF* ef, UINT16 doID, const BYTE* data, DWORD dataSize)
+static BOOL vgids_ef_write_do(vgidsEF* ef, UINT16 doID, const void* data, DWORD dataSize)
 {
 	/* Write DO to end of file: 2-Byte ID, 1-Byte Len, Data */
 	return vgids_write_tlv(ef->data, doID, data, dataSize);
@@ -503,13 +503,8 @@ handle_error:
 static int get_rsa_key_size(const rdpPrivateKey* privateKey)
 {
 	WINPR_ASSERT(privateKey);
-	RSA* rsa = freerdp_key_get_RSA(privateKey);
-	if (!rsa)
-		return -1;
 
-	const int size = RSA_size(rsa);
-	RSA_free(rsa);
-	return size;
+	return freerdp_key_get_bits(privateKey) / 8;
 }
 
 static BYTE vgids_get_algid(vgidsContext* p_Ctx)
@@ -801,28 +796,20 @@ static UINT16 vgids_handle_chained_response(vgidsContext* context, const BYTE** 
 static BOOL vgids_get_public_key(vgidsContext* context, UINT16 doTag)
 {
 	BOOL rc = FALSE;
-	BYTE* buf = NULL;
 	wStream* pubKey = NULL;
 	wStream* response = NULL;
 
 	WINPR_ASSERT(context);
 
 	/* Get key components */
-	RSA* rsa = freerdp_certificate_get_RSA(context->certificate);
-	if (!rsa)
-		return FALSE;
-	const BIGNUM *n, *e;
-	RSA_get0_key(rsa, &n, &e, NULL);
+	size_t nSize = 0;
+	size_t eSize = 0;
 
-	const size_t nSize = BN_num_bytes(n);
-	const size_t eSize = BN_num_bytes(e);
+	char* n = freerdp_certificate_get_param(context->certificate, FREERDP_CERT_RSA_N, &nSize);
+	char* e = freerdp_certificate_get_param(context->certificate, FREERDP_CERT_RSA_E, &eSize);
 
-	buf = malloc(nSize > eSize ? nSize : eSize);
-	if (!buf)
-	{
-		WLog_ERR(TAG, "Failed to allocate buffer for public key");
+	if (!n || !e)
 		goto handle_error;
-	}
 
 	pubKey = Stream_New(NULL, nSize + eSize + 0x10);
 	if (!pubKey)
@@ -839,12 +826,10 @@ static BOOL vgids_get_public_key(vgidsContext* context, UINT16 doTag)
 	}
 
 	/* write modulus and exponent DOs */
-	BN_bn2bin(n, buf);
-	if (!vgids_write_tlv(pubKey, 0x81, buf, nSize))
+	if (!vgids_write_tlv(pubKey, 0x81, n, nSize))
 		goto handle_error;
 
-	BN_bn2bin(e, buf);
-	if (!vgids_write_tlv(pubKey, 0x82, buf, eSize))
+	if (!vgids_write_tlv(pubKey, 0x82, e, eSize))
 		goto handle_error;
 
 	/* write ISO public key template */
@@ -857,8 +842,8 @@ static BOOL vgids_get_public_key(vgidsContext* context, UINT16 doTag)
 
 	rc = TRUE;
 handle_error:
-	free(buf);
-	RSA_free(rsa);
+	free(n);
+	free(e);
 	Stream_Free(pubKey, TRUE);
 	if (!rc)
 		Stream_Free(response, TRUE);
@@ -1043,7 +1028,7 @@ static BOOL vgids_perform_digital_signature(vgidsContext* context)
 {
 	size_t sigSize, msgSize;
 	EVP_PKEY_CTX* ctx = NULL;
-	EVP_PKEY* pk = EVP_PKEY_new();
+	EVP_PKEY* pk = freerdp_key_get_evp_pkey(context->privateKey);
 	const vgidsDigestInfoMap gidsDigestInfo[VGIDS_MAX_DIGEST_INFO] = {
 		{ g_PKCS1_SHA1, sizeof(g_PKCS1_SHA1), EVP_sha1() },
 		{ g_PKCS1_SHA224, sizeof(g_PKCS1_SHA224), EVP_sha224() },
@@ -1060,11 +1045,6 @@ static BOOL vgids_perform_digital_signature(vgidsContext* context)
 		return FALSE;
 	}
 
-	RSA* rsa = freerdp_key_get_RSA(context->privateKey);
-	if (!rsa)
-		return FALSE;
-
-	EVP_PKEY_set1_RSA(pk, rsa);
 	vgids_reset_context_response(context);
 
 	/* for each digest info */
@@ -1142,7 +1122,6 @@ static BOOL vgids_perform_digital_signature(vgidsContext* context)
 	}
 
 	EVP_PKEY_free(pk);
-	RSA_free(rsa);
 	vgids_reset_context_command_data(context);
 	return TRUE;
 
@@ -1151,12 +1130,12 @@ sign_failed:
 	vgids_reset_context_response(context);
 	EVP_PKEY_CTX_free(ctx);
 	EVP_PKEY_free(pk);
-	RSA_free(rsa);
 	return FALSE;
 }
 
 static BOOL vgids_perform_decrypt(vgidsContext* context)
 {
+	EVP_PKEY_CTX* ctx = NULL;
 	BOOL rc = FALSE;
 	int res;
 	int padding = RSA_NO_PADDING;
@@ -1170,21 +1149,38 @@ static BOOL vgids_perform_decrypt(vgidsContext* context)
 		padding = RSA_PKCS1_OAEP_PADDING;
 
 	/* init response buffer */
-	RSA* rsa = freerdp_key_get_RSA(context->privateKey);
-	if (!rsa)
+	EVP_PKEY* pkey = freerdp_key_get_evp_pkey(context->privateKey);
+	if (!pkey)
+		goto decrypt_failed;
+	ctx = EVP_PKEY_CTX_new(pkey, NULL);
+	if (!ctx)
+		goto decrypt_failed;
+	if (EVP_PKEY_decrypt_init(ctx) <= 0)
+		goto decrypt_failed;
+	if (EVP_PKEY_CTX_set_rsa_padding(ctx, padding) <= 0)
 		goto decrypt_failed;
 
-	context->responseData = Stream_New(NULL, RSA_size(rsa));
+	/* Determine buffer length */
+	const size_t inlen = Stream_Length(context->commandData);
+	size_t outlen = 0;
+	res = EVP_PKEY_decrypt(ctx, NULL, &outlen, Stream_Buffer(context->commandData), inlen);
+	if (res < 0)
+	{
+		WLog_ERR(TAG, "Failed to decrypt data");
+		goto decrypt_failed;
+	}
+
+	/* Prepare output buffer */
+	context->responseData = Stream_New(NULL, outlen);
 	if (!context->responseData)
 	{
 		WLog_ERR(TAG, "Failed to create decryption buffer");
 		goto decrypt_failed;
 	}
 
-	/* Determine buffer length */
-	res = RSA_private_decrypt((int)Stream_Length(context->commandData),
-	                          Stream_Buffer(context->commandData),
-	                          Stream_Buffer(context->responseData), rsa, padding);
+	/* Decrypt */
+	res = EVP_PKEY_decrypt(ctx, Stream_Buffer(context->responseData), &outlen,
+	                       Stream_Buffer(context->commandData), inlen);
 
 	if (res < 0)
 	{
@@ -1192,11 +1188,12 @@ static BOOL vgids_perform_decrypt(vgidsContext* context)
 		goto decrypt_failed;
 	}
 
-	Stream_SetLength(context->responseData, res);
+	Stream_SetLength(context->responseData, outlen);
 	rc = TRUE;
 
 decrypt_failed:
-	RSA_free(rsa);
+	EVP_PKEY_CTX_free(ctx);
+	EVP_PKEY_free(pkey);
 	vgids_reset_context_command_data(context);
 	if (!rc)
 		vgids_reset_context_response(context);
@@ -1510,7 +1507,7 @@ BOOL vgids_init(vgidsContext* ctx, const char* cert, const char* privateKey, con
 		goto init_failed;
 
 	cmrec.wKeyExchangeKeySizeBits = (WORD)size * 8;
-	if (!vgids_ef_write_do(commonEF, VGIDS_DO_CMAPFILE, (BYTE*)&cmrec, sizeof(cmrec)))
+	if (!vgids_ef_write_do(commonEF, VGIDS_DO_CMAPFILE, &cmrec, sizeof(cmrec)))
 		goto init_failed;
 
 	/* write cardapps DO */

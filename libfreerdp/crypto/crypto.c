@@ -219,7 +219,7 @@ char* crypto_read_pem(const char* filename, size_t* plength)
 		goto fail;
 
 	if (plength)
-		*plength = (size_t)size;
+		*plength = (size_t)strnlen(pem, size);
 	fclose(fp);
 	return pem;
 
@@ -229,7 +229,8 @@ fail:
 	WLog_WARN(TAG, "Failed to read PEM from file '%s' [%s]", filename,
 	          winpr_strerror(errno, buffer, sizeof(buffer)));
 }
-	fclose(fp);
+	if (fp)
+		fclose(fp);
 	free(pem);
 	return NULL;
 }

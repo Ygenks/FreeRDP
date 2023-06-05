@@ -60,13 +60,16 @@ if (NOT WIN32 AND NOT ANDROID AND NOT IOS AND NOT APPLE)
 	set(KRB5_DEFAULT ON)
 endif()
 
+option(WITH_DEBUG_SCHANNEL "Compile support for SCHANNEL debug" OFF)
+if (WITH_DEBUG_SCHANNEL)
+	winpr_definition_add("-DWITH_DEBUG_SCHANNEL")
+endif()
+
 option(WITH_KRB5 "Compile support for kerberos authentication." ${KRB5_DEFAULT})
 if (WITH_KRB5)
 	find_package(KRB5 REQUIRED)
 
 	list(APPEND ${MODULE_PREFIX}_KERBEROS_SRCS
-	    Kerberos/krb5glue_mit.c
-	    Kerberos/krb5glue_heimdal.c
 	    Kerberos/krb5glue.h)
 
 	winpr_include_directory_add(${KRB5_INCLUDEDIR})
@@ -81,8 +84,14 @@ if (WITH_KRB5)
 
 	if(KRB5_FLAVOUR STREQUAL "MIT")
 		winpr_definition_add("-DWITH_KRB5_MIT")
+        list(APPEND ${MODULE_PREFIX}_KERBEROS_SRCS
+            Kerberos/krb5glue_mit.c
+        )
 	elseif(KRB5_FLAVOUR STREQUAL "Heimdal")
 		winpr_definition_add("-DWITH_KRB5_HEIMDAL")
+        list(APPEND ${MODULE_PREFIX}_KERBEROS_SRCS
+            Kerberos/krb5glue_heimdal.c
+        )
 	else()
 		message(WARNING "Kerberos version not detected")
 	endif()

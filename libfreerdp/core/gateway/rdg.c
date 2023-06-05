@@ -40,6 +40,7 @@
 #include "../../crypto/opensslcompat.h"
 #include "rpc_fault.h"
 #include "../utils.h"
+#include "../settings.h"
 
 #define TAG FREERDP_TAG("core.gateway.rdg")
 
@@ -570,6 +571,9 @@ static BOOL rdg_websocket_reply_close(BIO* bio, wStream* s)
 		closeDataLen = 2;
 
 	closeFrame = Stream_New(NULL, 6 + closeDataLen);
+	if (!closeFrame)
+		return FALSE;
+
 	Stream_Write_UINT8(closeFrame, WEBSOCKET_FIN_BIT | WebsocketPongOpcode);
 	Stream_Write_UINT8(closeFrame, closeDataLen | WEBSOCKET_MASK_BIT); /* no payload */
 	winpr_RAND((BYTE*)&maskingKey1, 2);
@@ -606,6 +610,9 @@ static BOOL rdg_websocket_reply_pong(BIO* bio, wStream* s)
 		return rdg_write_websocket(bio, s, WebsocketPongOpcode);
 
 	closeFrame = Stream_New(NULL, 6);
+	if (!closeFrame)
+		return FALSE;
+
 	Stream_Write_UINT8(closeFrame, WEBSOCKET_FIN_BIT | WebsocketPongOpcode);
 	Stream_Write_UINT8(closeFrame, 0 | WEBSOCKET_MASK_BIT); /* no payload */
 	winpr_RAND((BYTE*)&maskingKey, 4);
@@ -614,6 +621,7 @@ static BOOL rdg_websocket_reply_pong(BIO* bio, wStream* s)
 
 	ERR_clear_error();
 	status = BIO_write(bio, Stream_Buffer(closeFrame), Stream_Length(closeFrame));
+	Stream_Free(closeFrame, TRUE);
 
 	if (status < 0)
 		return FALSE;
@@ -976,9 +984,8 @@ static wStream* rdg_receive_packet(rdpRdg* rdg)
 
 static BOOL rdg_send_handshake(rdpRdg* rdg)
 {
-	wStream* s;
-	BOOL status;
-	s = Stream_New(NULL, 14);
+	BOOL status = FALSE;
+	wStream* s = Stream_New(NULL, 14);
 
 	if (!s)
 		return FALSE;
@@ -1247,6 +1254,7 @@ out:
 
 static BOOL rdg_recv_auth_token(rdpCredsspAuth* auth, HttpResponse* response)
 {
+	char buffer[64] = { 0 };
 	size_t len;
 	const char* token64 = NULL;
 	size_t authTokenLength = 0;
@@ -1265,7 +1273,8 @@ static BOOL rdg_recv_auth_token(rdpCredsspAuth* auth, HttpResponse* response)
 		case HTTP_STATUS_OK:
 			break;
 		default:
-			WLog_DBG(TAG, "Unexpected HTTP status: %ld", StatusCode);
+			WLog_WARN(TAG, "Unexpected HTTP status: %s",
+			          http_status_string_format(StatusCode, buffer, ARRAYSIZE(buffer)));
 			return FALSE;
 	}
 
@@ -1706,31 +1715,18 @@ static BOOL rdg_auth_init(rdpRdg* rdg, rdpTls* tls, TCHAR* authPkg)
 			return FALSE;
 	}
 
-#ifdef _WIN32
 	if (doSCLogon)
 	{
-		CERT_CREDENTIAL_INFO certInfo = { sizeof(CERT_CREDENTIAL_INFO), { 0 } };
-		LPSTR marshalledCredentials;
-
-		memcpy(certInfo.rgbHashOfCert, rdg->smartcard->sha1Hash, sizeof(certInfo.rgbHashOfCert));
-
-		if (!CredMarshalCredentialA(CertCredential, &certInfo, &marshalledCredentials))
-		{
-			WLog_ERR(TAG, "error marshaling cert credentials");
+		if (!identity_set_from_smartcard_hash(&identity, settings, FreeRDP_GatewayUsername,
+		                                      FreeRDP_GatewayDomain, FreeRDP_GatewayPassword,
+		                                      rdg->smartcard->sha1Hash,
+		                                      sizeof(rdg->smartcard->sha1Hash)))
 			return FALSE;
-		}
-
-		if (sspi_SetAuthIdentityA(&identity, marshalledCredentials, NULL,
-		                          settings->GatewayPassword) < 0)
-			return FALSE;
-
-		CredFree(marshalledCredentials);
 	}
 	else
-#endif
 	{
-		if (sspi_SetAuthIdentityA(&identity, settings->GatewayUsername, settings->GatewayDomain,
-		                          settings->GatewayPassword) < 0)
+		if (!identity_set_from_settings(&identity, settings, FreeRDP_GatewayUsername,
+		                                FreeRDP_GatewayDomain, FreeRDP_GatewayPassword))
 			return FALSE;
 	}
 
@@ -1855,6 +1851,7 @@ static BOOL rdg_tls_connect(rdpRdg* rdg, rdpTls* tls, const char* peerAddress, i
 static BOOL rdg_establish_data_connection(rdpRdg* rdg, rdpTls* tls, const char* method,
                                           const char* peerAddress, int timeout, BOOL* rpcFallback)
 {
+	char buffer[64] = { 0 };
 	HttpResponse* response = NULL;
 	long statusCode;
 	SSIZE_T bodyLength;
@@ -1950,7 +1947,8 @@ static BOOL rdg_establish_data_connection(rdpRdg* rdg, rdpTls* tls, const char* 
 	encoding = http_response_get_transfer_encoding(response);
 	isWebsocket = http_response_is_websocket(rdg->http, response);
 	http_response_free(response);
-	WLog_DBG(TAG, "%s authorization result: %ld", method, statusCode);
+	WLog_DBG(TAG, "%s authorization result: %s", method,
+	         http_status_string_format(statusCode, buffer, ARRAYSIZE(buffer)));
 
 	switch (statusCode)
 	{
@@ -1992,6 +1990,8 @@ static BOOL rdg_establish_data_connection(rdpRdg* rdg, rdpTls* tls, const char* 
 			}
 			return TRUE;
 		default:
+			WLog_WARN(TAG, "Unexpected HTTP status %s",
+			          http_status_string_format(statusCode, buffer, ARRAYSIZE(buffer)));
 			return FALSE;
 	}
 

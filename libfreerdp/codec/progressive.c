@@ -418,29 +418,30 @@ static INLINE RFX_PROGRESSIVE_TILE* progressive_tile_new(void)
 	tile->height = 64;
 	tile->stride = 4 * tile->width;
 
-		size_t dataLen = tile->stride * tile->height * 1ULL;
-		tile->data = (BYTE*)winpr_aligned_malloc(dataLen, 16);
-	    if (!tile->data)
-		    goto fail;
-	    memset(tile->data, 0xFF, dataLen);
+	size_t dataLen = tile->stride * tile->height * 1ULL;
+	tile->data = (BYTE*)winpr_aligned_malloc(dataLen, 16);
+	if (!tile->data)
+		goto fail;
+	memset(tile->data, 0xFF, dataLen);
 
-	    size_t signLen = (8192 + 32) * 3;
-	    tile->sign = (BYTE*)winpr_aligned_calloc(signLen, sizeof(BYTE), 16);
-	    if (!tile->sign)
-		    goto fail;
+	size_t signLen = (8192 + 32) * 3;
+	tile->sign = (BYTE*)winpr_aligned_calloc(signLen, sizeof(BYTE), 16);
+	if (!tile->sign)
+		goto fail;
 
-	    size_t currentLen = (8192 + 32) * 3;
-	    tile->current = (BYTE*)winpr_aligned_calloc(currentLen, sizeof(BYTE), 16);
-	    if (!tile->current)
-		    goto fail;
+	size_t currentLen = (8192 + 32) * 3;
+	tile->current = (BYTE*)winpr_aligned_calloc(currentLen, sizeof(BYTE), 16);
+	if (!tile->current)
+		goto fail;
 
-	    return tile;
+	return tile;
+
 fail:
 	progressive_tile_free(tile);
 	return NULL;
 }
 
-static BOOL progressive_allocate_tile_cache(PROGRESSIVE_SURFACE_CONTEXT* surface)
+static BOOL progressive_allocate_tile_cache(PROGRESSIVE_SURFACE_CONTEXT* surface, size_t min)
 {
 	size_t x;
 	size_t oldIndex = 0;
@@ -451,7 +452,8 @@ static BOOL progressive_allocate_tile_cache(PROGRESSIVE_SURFACE_CONTEXT* surface
 	if (surface->tiles)
 	{
 		oldIndex = surface->gridSize;
-		surface->gridSize += 1024;
+		while (surface->gridSize < min)
+			surface->gridSize += 1024;
 	}
 
 	void* tmp = winpr_aligned_recalloc(surface->tiles, surface->gridSize,
@@ -465,7 +467,7 @@ static BOOL progressive_allocate_tile_cache(PROGRESSIVE_SURFACE_CONTEXT* surface
 	{
 		surface->tiles[x] = progressive_tile_new();
 		if (!surface->tiles[x])
-		return FALSE;
+			return FALSE;
 	}
 
 	tmp =
@@ -481,7 +483,6 @@ static BOOL progressive_allocate_tile_cache(PROGRESSIVE_SURFACE_CONTEXT* surface
 static PROGRESSIVE_SURFACE_CONTEXT* progressive_surface_context_new(UINT16 surfaceId, UINT32 width,
                                                                     UINT32 height)
 {
-	UINT32 x;
 	PROGRESSIVE_SURFACE_CONTEXT* surface = (PROGRESSIVE_SURFACE_CONTEXT*)winpr_aligned_calloc(
 	    1, sizeof(PROGRESSIVE_SURFACE_CONTEXT), 32);
 
@@ -495,7 +496,7 @@ static PROGRESSIVE_SURFACE_CONTEXT* progressive_surface_context_new(UINT16 surfa
 	surface->gridHeight = (height + (64 - height % 64)) / 64;
 	surface->gridSize = surface->gridWidth * surface->gridHeight;
 
-	if (!progressive_allocate_tile_cache(surface))
+	if (!progressive_allocate_tile_cache(surface, surface->gridSize))
 	{
 		progressive_surface_context_free(surface);
 		return NULL;
@@ -569,14 +570,20 @@ static BOOL progressive_surface_tile_replace(PROGRESSIVE_SURFACE_CONTEXT* surfac
 		         region->numTiles, region->usedTiles);
 		return FALSE;
 	}
-	if (surface->numUpdatedTiles >= surface->tilesSize)
-	{
-		if (!progressive_allocate_tile_cache(surface))
-			return FALSE;
-	}
 
 	region->tiles[region->usedTiles++] = t;
-	surface->updatedTileIndices[surface->numUpdatedTiles++] = (UINT32)zIdx;
+	if (!t->dirty)
+	{
+		if (surface->numUpdatedTiles >= surface->gridSize)
+		{
+			if (!progressive_allocate_tile_cache(surface, surface->numUpdatedTiles + 1))
+				return FALSE;
+		}
+
+		surface->updatedTileIndices[surface->numUpdatedTiles++] = (UINT32)zIdx;
+	}
+
+	t->dirty = TRUE;
 	return TRUE;
 }
 
@@ -2495,11 +2502,8 @@ INT32 progressive_decompress(PROGRESSIVE_CONTEXT* progressive, const BYTE* pSrcD
                              UINT32 frameId)
 {
 	INT32 rc = 1;
-	UINT32 i;
-	wStream *s, ss;
-	size_t start, end;
-	REGION16 clippingRects, updateRegion;
-	PROGRESSIVE_BLOCK_REGION* region = &progressive->region;
+
+	WINPR_ASSERT(progressive);
 	PROGRESSIVE_SURFACE_CONTEXT* surface = progressive_get_surface_data(progressive, surfaceId);
 
 	if (!surface)
@@ -2509,13 +2513,18 @@ INT32 progressive_decompress(PROGRESSIVE_CONTEXT* progressive, const BYTE* pSrcD
 		return -1001;
 	}
 
+	PROGRESSIVE_BLOCK_REGION* region = &progressive->region;
+	WINPR_ASSERT(region);
+
 	if (surface->frameId != frameId)
 	{
 		surface->frameId = frameId;
 		surface->numUpdatedTiles = 0;
 	}
 
-	s = Stream_StaticConstInit(&ss, pSrcData, SrcSize);
+	wStream ss = { 0 };
+	wStream* s = Stream_StaticConstInit(&ss, pSrcData, SrcSize);
+	WINPR_ASSERT(s);
 
 	switch (DstFormat)
 	{
@@ -2530,7 +2539,7 @@ INT32 progressive_decompress(PROGRESSIVE_CONTEXT* progressive, const BYTE* pSrcD
 			break;
 	}
 
-	start = Stream_GetPosition(s);
+	const size_t start = Stream_GetPosition(s);
 	progressive->state = 0; /* Set state to not initialized */
 	while (Stream_GetRemainingLength(s) > 0)
 	{
@@ -2538,7 +2547,7 @@ INT32 progressive_decompress(PROGRESSIVE_CONTEXT* progressive, const BYTE* pSrcD
 			goto fail;
 	}
 
-	end = Stream_GetPosition(s);
+	const size_t end = Stream_GetPosition(s);
 	if ((end - start) != SrcSize)
 	{
 		WLog_Print(progressive->log, WLOG_ERROR,
@@ -2548,12 +2557,14 @@ INT32 progressive_decompress(PROGRESSIVE_CONTEXT* progressive, const BYTE* pSrcD
 		goto fail;
 	}
 
+	REGION16 clippingRects = { 0 };
 	region16_init(&clippingRects);
 
-	for (i = 0; i < region->numRects; i++)
+	for (UINT32 i = 0; i < region->numRects; i++)
 	{
-		RECTANGLE_16 clippingRect;
+		RECTANGLE_16 clippingRect = { 0 };
 		const RFX_RECT* rect = &(region->rects[i]);
+
 		clippingRect.left = (UINT16)nXDst + rect->x;
 		clippingRect.top = (UINT16)nYDst + rect->y;
 		clippingRect.right = clippingRect.left + rect->width;
@@ -2561,22 +2572,30 @@ INT32 progressive_decompress(PROGRESSIVE_CONTEXT* progressive, const BYTE* pSrcD
 		region16_union_rect(&clippingRects, &clippingRects, &clippingRect);
 	}
 
-	for (i = 0; i < surface->numUpdatedTiles; i++)
+	for (UINT32 i = 0; i < surface->numUpdatedTiles; i++)
 	{
-		UINT32 nbUpdateRects, j;
-		const RECTANGLE_16* updateRects;
-		RECTANGLE_16 updateRect;
-		RFX_PROGRESSIVE_TILE* tile = surface->tiles[surface->updatedTileIndices[i]];
+		UINT32 nbUpdateRects = 0;
+		const RECTANGLE_16* updateRects = NULL;
+		RECTANGLE_16 updateRect = { 0 };
+
+		WINPR_ASSERT(surface->updatedTileIndices);
+		const UINT32 index = surface->updatedTileIndices[i];
+
+		WINPR_ASSERT(index < surface->tilesSize);
+		RFX_PROGRESSIVE_TILE* tile = surface->tiles[index];
+		WINPR_ASSERT(tile);
 
 		updateRect.left = nXDst + tile->x;
 		updateRect.top = nYDst + tile->y;
 		updateRect.right = updateRect.left + 64;
 		updateRect.bottom = updateRect.top + 64;
+
+		REGION16 updateRegion = { 0 };
 		region16_init(&updateRegion);
 		region16_intersect_rect(&updateRegion, &clippingRects, &updateRect);
 		updateRects = region16_rects(&updateRegion, &nbUpdateRects);
 
-		for (j = 0; j < nbUpdateRects; j++)
+		for (UINT32 j = 0; j < nbUpdateRects; j++)
 		{
 			const RECTANGLE_16* rect = &updateRects[j];
 			const UINT32 nXSrc = rect->left - (nXDst + tile->x);
@@ -2597,10 +2616,11 @@ INT32 progressive_decompress(PROGRESSIVE_CONTEXT* progressive, const BYTE* pSrcD
 		}
 
 		region16_uninit(&updateRegion);
+		tile->dirty = FALSE;
 	}
 
 	region16_uninit(&clippingRects);
-
+	surface->numUpdatedTiles = 0;
 fail:
 	return rc;
 }
@@ -2746,8 +2766,6 @@ int progressive_compress(PROGRESSIVE_CONTEXT* progressive, const BYTE* pSrcData,
 		WLog_ERR(TAG, "failed to encode rfx message");
 		goto fail;
 	}
-
-	message->freeRects = TRUE;
 
 	rc = progressive_rfx_write_message_progressive_simple(progressive, s, message);
 	rfx_message_free(progressive->rfx_context, message);

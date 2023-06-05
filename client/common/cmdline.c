@@ -1753,6 +1753,32 @@ static PARSE_ON_OFF_RESULT parse_on_off_option(const char* value)
 	return PARSE_FAIL;
 }
 
+typedef enum
+{
+	CLIP_DIR_PARSE_ALL,
+	CLIP_DIR_PARSE_OFF,
+	CLIP_DIR_PARSE_LOCAL,
+	CLIP_DIR_PARSE_REMOTE,
+	CLIP_DIR_PARSE_FAIL
+} PARSE_CLIP_DIR_RESULT;
+
+static PARSE_CLIP_DIR_RESULT parse_clip_direciton_to_option(const char* value)
+{
+	WINPR_ASSERT(value);
+	const char* sep = strchr(value, ':');
+	if (!sep)
+		return CLIP_DIR_PARSE_FAIL;
+	if (option_equals("all", &sep[1]))
+		return CLIP_DIR_PARSE_ALL;
+	if (option_equals("off", &sep[1]))
+		return CLIP_DIR_PARSE_OFF;
+	if (option_equals("local", &sep[1]))
+		return CLIP_DIR_PARSE_LOCAL;
+	if (option_equals("remote", &sep[1]))
+		return CLIP_DIR_PARSE_REMOTE;
+	return CLIP_DIR_PARSE_FAIL;
+}
+
 static int parse_tls_ciphers(rdpSettings* settings, const char* Value)
 {
 	const char* ciphers = NULL;
@@ -2396,28 +2422,6 @@ static BOOL parse_gateway_type_option(rdpSettings* settings, const char* value)
 	}
 	else
 	{
-		char* c = strchr(value, ',');
-		while (c)
-		{
-			char* next = strchr(c + 1, ',');
-			if (next)
-				*next = '\0';
-			*c++ = '\0';
-			if (option_equals(c, "no-websockets"))
-			{
-				if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpUseWebsockets, FALSE))
-					return FALSE;
-			}
-			else if (option_equals(c, "extauth-sspi-ntlm"))
-			{
-				if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpExtAuthSspiNtlm, TRUE))
-					return FALSE;
-			}
-			else
-				return FALSE;
-			c = next;
-		}
-
 		if (option_equals(value, "http"))
 		{
 			if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayRpcTransport, FALSE) ||
@@ -2476,6 +2480,7 @@ static BOOL parse_gateway_options(rdpSettings* settings, const COMMAND_LINE_ARGU
 	if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayEnabled, TRUE))
 		goto fail;
 
+	BOOL allowHttpOpts = FALSE;
 	for (size_t x = 0; x < count; x++)
 	{
 		BOOL validOption = FALSE;
@@ -2489,6 +2494,7 @@ static BOOL parse_gateway_options(rdpSettings* settings, const COMMAND_LINE_ARGU
 			if (!parse_gateway_host_option(settings, gw))
 				goto fail;
 			validOption = TRUE;
+			allowHttpOpts = FALSE;
 		}
 
 		const char* gu = option_starts_with("u:", argval);
@@ -2497,6 +2503,7 @@ static BOOL parse_gateway_options(rdpSettings* settings, const COMMAND_LINE_ARGU
 			if (!parse_gateway_cred_option(settings, gu, FreeRDP_GatewayUsername))
 				goto fail;
 			validOption = TRUE;
+			allowHttpOpts = FALSE;
 		}
 
 		const char* gd = option_starts_with("d:", argval);
@@ -2505,6 +2512,7 @@ static BOOL parse_gateway_options(rdpSettings* settings, const COMMAND_LINE_ARGU
 			if (!parse_gateway_cred_option(settings, gd, FreeRDP_GatewayDomain))
 				goto fail;
 			validOption = TRUE;
+			allowHttpOpts = FALSE;
 		}
 
 		const char* gp = option_starts_with("p:", argval);
@@ -2513,6 +2521,7 @@ static BOOL parse_gateway_options(rdpSettings* settings, const COMMAND_LINE_ARGU
 			if (!parse_gateway_cred_option(settings, gp, FreeRDP_GatewayPassword))
 				goto fail;
 			validOption = TRUE;
+			allowHttpOpts = FALSE;
 		}
 
 		const char* gt = option_starts_with("type:", argval);
@@ -2521,6 +2530,7 @@ static BOOL parse_gateway_options(rdpSettings* settings, const COMMAND_LINE_ARGU
 			if (!parse_gateway_type_option(settings, gt))
 				goto fail;
 			validOption = TRUE;
+			allowHttpOpts = freerdp_settings_get_bool(settings, FreeRDP_GatewayHttpTransport);
 		}
 
 		const char* gat = option_starts_with("access-token:", argval);
@@ -2529,6 +2539,7 @@ static BOOL parse_gateway_options(rdpSettings* settings, const COMMAND_LINE_ARGU
 			if (!freerdp_settings_set_string(settings, FreeRDP_GatewayAccessToken, gat))
 				goto fail;
 			validOption = TRUE;
+			allowHttpOpts = FALSE;
 		}
 
 		const char* um = option_starts_with("usage-method:", argval);
@@ -2537,6 +2548,23 @@ static BOOL parse_gateway_options(rdpSettings* settings, const COMMAND_LINE_ARGU
 			if (!parse_gateway_usage_option(settings, um))
 				goto fail;
 			validOption = TRUE;
+			allowHttpOpts = FALSE;
+		}
+
+		if (allowHttpOpts)
+		{
+			if (option_equals(argval, "no-websockets"))
+			{
+				if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpUseWebsockets, FALSE))
+					goto fail;
+				validOption = TRUE;
+			}
+			else if (option_equals(argval, "extauth-sspi-ntlm"))
+			{
+				if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpExtAuthSspiNtlm, TRUE))
+					goto fail;
+				validOption = TRUE;
+			}
 		}
 
 		if (!validOption)
@@ -2558,7 +2586,7 @@ static void fill_credential_string(COMMAND_LINE_ARGUMENT_A* args, const char* va
 	if (!arg)
 		return;
 
-	if (arg->Flags & COMMAND_LINE_ARGUMENT_PRESENT)
+	if (arg->Flags & COMMAND_LINE_VALUE_PRESENT)
 		FillMemory(arg->Value, strlen(arg->Value), '*');
 }
 
@@ -2603,8 +2631,8 @@ static void fill_credential_strings(COMMAND_LINE_ARGUMENT_A* args)
 	}
 }
 
-int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, int argc,
-                                                         char** argv, BOOL allowUnknown)
+static int freerdp_client_settings_parse_command_line_arguments_int(rdpSettings* settings, int argc,
+                                                                    char* argv[], BOOL allowUnknown)
 {
 	char* user = NULL;
 	char* str;
@@ -3351,6 +3379,69 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 							rc = COMMAND_LINE_ERROR_MEMORY;
 						settings->RedirectClipboard = TRUE;
 					}
+					else if (option_starts_with("direction-to", cur))
+					{
+						const UINT32 mask =
+						    freerdp_settings_get_uint32(settings, FreeRDP_ClipboardFeatureMask) &
+						    ~(CLIPRDR_FLAG_LOCAL_TO_REMOTE | CLIPRDR_FLAG_REMOTE_TO_LOCAL);
+						const PARSE_CLIP_DIR_RESULT bval = parse_clip_direciton_to_option(cur);
+						UINT32 flags = 0;
+						switch (bval)
+						{
+							case CLIP_DIR_PARSE_ALL:
+								flags |=
+								    CLIPRDR_FLAG_LOCAL_TO_REMOTE | CLIPRDR_FLAG_REMOTE_TO_LOCAL;
+								break;
+							case CLIP_DIR_PARSE_LOCAL:
+								flags |= CLIPRDR_FLAG_REMOTE_TO_LOCAL;
+								break;
+							case CLIP_DIR_PARSE_REMOTE:
+								flags |= CLIPRDR_FLAG_LOCAL_TO_REMOTE;
+								break;
+							case CLIP_DIR_PARSE_OFF:
+								break;
+							case CLIP_DIR_PARSE_FAIL:
+							default:
+								rc = COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
+								break;
+						}
+
+						if (!freerdp_settings_set_uint32(settings, FreeRDP_ClipboardFeatureMask,
+						                                 mask | flags))
+							rc = COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
+					}
+					else if (option_starts_with("files-to", cur))
+					{
+						const UINT32 mask =
+						    freerdp_settings_get_uint32(settings, FreeRDP_ClipboardFeatureMask) &
+						    ~(CLIPRDR_FLAG_LOCAL_TO_REMOTE_FILES |
+						      CLIPRDR_FLAG_REMOTE_TO_LOCAL_FILES);
+						const PARSE_CLIP_DIR_RESULT bval = parse_clip_direciton_to_option(cur);
+						UINT32 flags = 0;
+						switch (bval)
+						{
+							case CLIP_DIR_PARSE_ALL:
+								flags |= CLIPRDR_FLAG_LOCAL_TO_REMOTE_FILES |
+								         CLIPRDR_FLAG_REMOTE_TO_LOCAL_FILES;
+								break;
+							case CLIP_DIR_PARSE_LOCAL:
+								flags |= CLIPRDR_FLAG_REMOTE_TO_LOCAL_FILES;
+								break;
+							case CLIP_DIR_PARSE_REMOTE:
+								flags |= CLIPRDR_FLAG_LOCAL_TO_REMOTE_FILES;
+								break;
+							case CLIP_DIR_PARSE_OFF:
+								break;
+							case CLIP_DIR_PARSE_FAIL:
+							default:
+								rc = COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
+								break;
+						}
+
+						if (!freerdp_settings_set_uint32(settings, FreeRDP_ClipboardFeatureMask,
+						                                 mask | flags))
+							rc = COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
+					}
 					else
 						rc = COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 				}
@@ -3696,6 +3787,12 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 
 				free(ptr.p);
 			}
+		}
+		CommandLineSwitchCase(arg, "args-from")
+		{
+			WLog_ERR(TAG, "/args-from:%s can not be used in combination with other arguments!",
+			         arg->Value);
+			return COMMAND_LINE_ERROR_UNEXPECTED_VALUE;
 		}
 		CommandLineSwitchCase(arg, "from-stdin")
 		{
@@ -4366,8 +4463,6 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 	{
 		settings->FastPathOutput = TRUE;
 		settings->FrameMarkerCommandEnabled = TRUE;
-		if (!freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32))
-			return COMMAND_LINE_ERROR;
 	}
 
 	arg = CommandLineFindArgumentA(largs, "port");
@@ -4384,6 +4479,123 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 	fill_credential_strings(largs);
 
 	return status;
+}
+
+static void argv_free(int argc, char* argv[])
+{
+	if (!argv)
+		return;
+	for (int x = 0; x < argc; x++)
+		free(argv[x]);
+	free(argv);
+}
+
+static BOOL argv_append(int* pargc, char** pargv[], char* what)
+{
+	WINPR_ASSERT(pargc);
+	WINPR_ASSERT(pargv);
+
+	if (*pargc < 0)
+		return FALSE;
+
+	if (!what)
+		return FALSE;
+
+	int nargc = *pargc + 1;
+	char** tmp = realloc(*pargv, nargc * sizeof(char*));
+	if (!tmp)
+		return FALSE;
+
+	tmp[*pargc] = what;
+	*pargv = tmp;
+	*pargc = nargc;
+	return TRUE;
+}
+
+int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, int oargc,
+                                                         char* oargv[], BOOL allowUnknown)
+{
+	int argc = oargc;
+	char** argv = oargv;
+
+	int aargc = 0;
+	char** aargv = NULL;
+	if ((argc == 2) && option_starts_with("/args-from:", argv[1]))
+	{
+		BOOL success = FALSE;
+		const char* file = strchr(argv[1], ':') + 1;
+		FILE* fp = stdin;
+
+		if (option_starts_with("fd:", file))
+		{
+			ULONGLONG result = 0;
+			const char* val = strchr(file, ':') + 1;
+			if (!value_to_uint(val, &result, 0, INT_MAX))
+				return -1;
+			fp = fdopen((int)result, "r");
+		}
+		else if (strcmp(file, "stdin") != 0)
+			fp = winpr_fopen(file, "r");
+
+		if (!fp)
+		{
+			WLog_ERR(TAG, "Failed to read command line options from file '%s'", file);
+			return -1;
+		}
+
+		if (!argv_append(&aargc, &aargv, _strdup(oargv[0])))
+			goto fail;
+		while (!feof(fp))
+		{
+			char* line = NULL;
+			size_t size = 0;
+			INT64 rc = GetLine(&line, &size, fp);
+			if ((rc < 0) || !line)
+			{
+				/* abort if GetLine failed due to reaching EOF */
+				if (feof(fp))
+					break;
+				goto fail;
+			}
+
+			while (rc > 0)
+			{
+				const char cur = (line[rc - 1]);
+				if ((cur == '\n') || (cur == '\r'))
+				{
+					line[rc - 1] = '\0';
+					rc--;
+				}
+				else
+					break;
+			}
+			/* abort on empty lines */
+			if (rc == 0)
+			{
+				free(line);
+				break;
+			}
+			if (!argv_append(&aargc, &aargv, line))
+				goto fail;
+		}
+
+		success = TRUE;
+	fail:
+		fclose(fp);
+
+		if (!success)
+		{
+			argv_free(aargc, aargv);
+			return -1;
+		}
+		argc = aargc;
+		argv = aargv;
+	}
+
+	int res = freerdp_client_settings_parse_command_line_arguments_int(settings, argc, argv,
+	                                                                   allowUnknown);
+	argv_free(aargc, aargv);
+	return res;
 }
 
 static BOOL freerdp_client_load_static_channel_addin(rdpChannels* channels, rdpSettings* settings,

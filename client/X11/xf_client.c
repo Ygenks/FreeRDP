@@ -1526,8 +1526,10 @@ static DWORD WINAPI xf_client_thread(LPVOID param)
 					 * Indicate an unsuccessful connection attempt if reconnect
 					 * did not succeed and no other error was specified.
 					 */
+					const UINT32 error = freerdp_get_last_error(instance->context);
+
 					if (freerdp_error_info(instance) == 0)
-						exit_code = XF_EXIT_CONN_FAILED;
+						exit_code = xf_map_error_to_exit_code(error);
 				}
 
 				if (freerdp_get_last_error(context) == FREERDP_ERROR_SUCCESS)
@@ -1879,6 +1881,7 @@ static BOOL xfreerdp_client_new(freerdp* instance, rdpContext* context)
 	instance->PostDisconnect = xf_post_disconnect;
 	instance->PostFinalDisconnect = xf_post_final_disconnect;
 	instance->LogonErrorInfo = xf_logon_error_info;
+	instance->GetAadAuthCode = client_cli_get_aad_auth_code;
 	PubSub_SubscribeTerminate(context->pubSub, xf_TerminateEventHandler);
 #ifdef WITH_XRENDER
 	PubSub_SubscribeZoomingChange(context->pubSub, xf_ZoomingChangeEventHandler);

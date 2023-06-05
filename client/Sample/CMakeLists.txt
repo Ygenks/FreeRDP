@@ -14,11 +14,27 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+cmake_minimum_required(VERSION 3.13)
 
-set(MODULE_NAME "sfreerdp")
-set(MODULE_PREFIX "FREERDP_CLIENT_SAMPLE")
+project(sfreerdp LANGUAGES C)
 
-set(${MODULE_PREFIX}_SRCS
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS ON)
+
+option(CMAKE_COLOR_MAKEFILE "colorful CMake makefile" ON)
+option(CMAKE_VERBOSE_MAKEFILE "verbose CMake makefile" ON)
+option(CMAKE_POSITION_INDEPENDENT_CODE "build with position independent code (-fPIC or -fPIE)" ON)
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/)
+
+include(ConfigureFreeRDP)
+
+include(GNUInstallDirsWrapper)
+
+# RPATH configuration
+include(ConfigureRPATH)
+
+set(SRCS
 	tf_channels.c
 	tf_channels.h
 	tf_freerdp.h
@@ -30,22 +46,24 @@ if (WIN32)
   set (RC_VERSION_MAJOR ${FREERDP_VERSION_MAJOR})
   set (RC_VERSION_MINOR ${FREERDP_VERSION_MINOR})
   set (RC_VERSION_BUILD ${FREERDP_VERSION_REVISION})
-  set (RC_VERSION_FILE "${MODULE_NAME}${CMAKE_EXECUTABLE_SUFFIX}" )
+  set (RC_VERSION_FILE "${PROJECT_NAME}${CMAKE_EXECUTABLE_SUFFIX}" )
 
   configure_file(
-    ${PROJECT_SOURCE_DIR}/cmake/WindowsDLLVersion.rc.in
+    ${PROJECT_SOURCE_DIR}/../../cmake/WindowsDLLVersion.rc.in
     ${CMAKE_CURRENT_BINARY_DIR}/version.rc
     @ONLY)
 
-  set (WINPR_SRCS ${WINPR_SRCS} ${CMAKE_CURRENT_BINARY_DIR}/version.rc)
+list (APPEND SRCS ${CMAKE_CURRENT_BINARY_DIR}/version.rc)
 endif()
 
+add_executable(${PROJECT_NAME} ${SRCS})
 
-add_executable(${MODULE_NAME} ${${MODULE_PREFIX}_SRCS})
+set(LIBS
+    freerdp-client
+    freerdp
+    winpr
+)
+target_link_libraries(${PROJECT_NAME} PRIVATE ${LIBS})
 
-set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} ${CMAKE_DL_LIBS})
-set(${MODULE_PREFIX}_LIBS ${${MODULE_PREFIX}_LIBS} freerdp-client freerdp)
-target_link_libraries(${MODULE_NAME} ${${MODULE_PREFIX}_LIBS})
-
-set_property(TARGET ${MODULE_NAME} PROPERTY FOLDER "Client/Sample")
-install(TARGETS ${MODULE_NAME} DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client)
+set_property(TARGET ${PROJECT_NAME} PROPERTY FOLDER "Client/Sample")
+install(TARGETS ${PROJECT_NAME} DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client)

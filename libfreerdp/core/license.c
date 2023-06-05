@@ -1966,8 +1966,11 @@ BOOL license_send_error_alert(rdpLicense* license, UINT32 dwErrorCode, UINT32 dw
 	Stream_Write_UINT32(s, dwErrorCode);
 	Stream_Write_UINT32(s, dwStateTransition);
 
-	if (!license_write_binary_blob(s, info))
-		goto fail;
+	if (info)
+	{
+		if (!license_write_binary_blob(s, info))
+			goto fail;
+	}
 
 	return license_send(license, s, ERROR_ALERT);
 fail:
@@ -2093,7 +2096,7 @@ BOOL license_read_new_or_upgrade_license_packet(rdpLicense* license, wStream* s)
 	if (!licenseStream)
 		goto fail;
 
-	if (!license_check_stream_length(s, 8, "license new/upgrade::blob::version"))
+	if (!license_check_stream_length(licenseStream, 8, "license new/upgrade::blob::version"))
 		goto fail;
 
 	Stream_Read_UINT16(licenseStream, os_minor);
@@ -2101,7 +2104,7 @@ BOOL license_read_new_or_upgrade_license_packet(rdpLicense* license, wStream* s)
 
 	/* Scope */
 	Stream_Read_UINT32(licenseStream, cbScope);
-	if (!license_check_stream_length(s, cbScope, "license new/upgrade::blob::scope"))
+	if (!license_check_stream_length(licenseStream, cbScope, "license new/upgrade::blob::scope"))
 		goto fail;
 
 #ifdef WITH_DEBUG_LICENSE
@@ -2111,11 +2114,12 @@ BOOL license_read_new_or_upgrade_license_packet(rdpLicense* license, wStream* s)
 	Stream_Seek(licenseStream, cbScope);
 
 	/* CompanyName */
-	if (!license_check_stream_length(s, 4, "license new/upgrade::blob::cbCompanyName"))
+	if (!license_check_stream_length(licenseStream, 4, "license new/upgrade::blob::cbCompanyName"))
 		goto fail;
 
 	Stream_Read_UINT32(licenseStream, cbCompanyName);
-	if (!license_check_stream_length(s, cbCompanyName, "license new/upgrade::blob::CompanyName"))
+	if (!license_check_stream_length(licenseStream, cbCompanyName,
+	                                 "license new/upgrade::blob::CompanyName"))
 		goto fail;
 
 #ifdef WITH_DEBUG_LICENSE
@@ -2125,12 +2129,13 @@ BOOL license_read_new_or_upgrade_license_packet(rdpLicense* license, wStream* s)
 	Stream_Seek(licenseStream, cbCompanyName);
 
 	/* productId */
-	if (!license_check_stream_length(s, 4, "license new/upgrade::blob::cbProductId"))
+	if (!license_check_stream_length(licenseStream, 4, "license new/upgrade::blob::cbProductId"))
 		goto fail;
 
 	Stream_Read_UINT32(licenseStream, cbProductId);
 
-	if (!license_check_stream_length(s, cbProductId, "license new/upgrade::blob::ProductId"))
+	if (!license_check_stream_length(licenseStream, cbProductId,
+	                                 "license new/upgrade::blob::ProductId"))
 		goto fail;
 
 #ifdef WITH_DEBUG_LICENSE
@@ -2140,11 +2145,12 @@ BOOL license_read_new_or_upgrade_license_packet(rdpLicense* license, wStream* s)
 	Stream_Seek(licenseStream, cbProductId);
 
 	/* licenseInfo */
-	if (!license_check_stream_length(s, 4, "license new/upgrade::blob::cbLicenseInfo"))
+	if (!license_check_stream_length(licenseStream, 4, "license new/upgrade::blob::cbLicenseInfo"))
 		goto fail;
 
 	Stream_Read_UINT32(licenseStream, cbLicenseInfo);
-	if (!license_check_stream_length(s, cbLicenseInfo, "license new/upgrade::blob::LicenseInfo"))
+	if (!license_check_stream_length(licenseStream, cbLicenseInfo,
+	                                 "license new/upgrade::blob::LicenseInfo"))
 		goto fail;
 
 	license->type = LICENSE_TYPE_ISSUED;
@@ -2270,10 +2276,6 @@ BOOL license_read_new_license_request_packet(rdpLicense* license, wStream* s)
 
 	WINPR_ASSERT(license);
 
-	const rdpCertInfo* info = freerdp_certificate_get_info(license->certificate);
-	if (!info)
-		return FALSE;
-
 	if (!license_check_stream_length(s, 8ull + sizeof(license->ClientRandom),
 	                                 "new license request"))
 		return FALSE;
@@ -2292,7 +2294,10 @@ BOOL license_read_new_license_request_packet(rdpLicense* license, wStream* s)
 	                                                  &ModulusLength))
 		return FALSE;
 
-	if (ModulusLength != info->ModulusLength)
+	const rdpCertInfo* info = freerdp_certificate_get_info(license->certificate);
+	if (!info)
+		WLog_WARN(TAG, "Missing license certificate, skipping ModulusLength checks");
+	else if (ModulusLength != info->ModulusLength)
 	{
 		WLog_WARN(TAG,
 		          "EncryptedPremasterSecret expected to be %" PRIu32 " bytes, but read %" PRIu32

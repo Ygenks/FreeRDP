@@ -306,6 +306,9 @@ BOOL freerdp_settings_get_bool(const rdpSettings* settings, size_t id)
 		case FreeRDP_IgnoreCertificate:
 			return settings->IgnoreCertificate;
 
+		case FreeRDP_IgnoreInvalidDevices:
+			return settings->IgnoreInvalidDevices;
+
 		case FreeRDP_JpegCodec:
 			return settings->JpegCodec;
 
@@ -949,6 +952,10 @@ BOOL freerdp_settings_set_bool(rdpSettings* settings, size_t id, BOOL val)
 			settings->IgnoreCertificate = cnv.c;
 			break;
 
+		case FreeRDP_IgnoreInvalidDevices:
+			settings->IgnoreInvalidDevices = cnv.c;
+			break;
+
 		case FreeRDP_JpegCodec:
 			settings->JpegCodec = cnv.c;
 			break;
@@ -1375,6 +1382,9 @@ UINT16 freerdp_settings_get_uint16(const rdpSettings* settings, size_t id)
 		case FreeRDP_ProxyPort:
 			return settings->ProxyPort;
 
+		case FreeRDP_SupportedColorDepths:
+			return settings->SupportedColorDepths;
+
 		case FreeRDP_TLSMaxVersion:
 			return settings->TLSMaxVersion;
 
@@ -1441,6 +1451,10 @@ BOOL freerdp_settings_set_uint16(rdpSettings* settings, size_t id, UINT16 val)
 
 		case FreeRDP_ProxyPort:
 			settings->ProxyPort = cnv.c;
+			break;
+
+		case FreeRDP_SupportedColorDepths:
+			settings->SupportedColorDepths = cnv.c;
 			break;
 
 		case FreeRDP_TLSMaxVersion:
@@ -1543,6 +1557,9 @@ UINT32 freerdp_settings_get_uint32(const rdpSettings* settings, size_t id)
 
 		case FreeRDP_ClientSessionId:
 			return settings->ClientSessionId;
+
+		case FreeRDP_ClipboardFeatureMask:
+			return settings->ClipboardFeatureMask;
 
 		case FreeRDP_ClusterInfoFlags:
 			return settings->ClusterInfoFlags;
@@ -1940,6 +1957,10 @@ BOOL freerdp_settings_set_uint32(rdpSettings* settings, size_t id, UINT32 val)
 
 		case FreeRDP_ClientSessionId:
 			settings->ClientSessionId = cnv.c;
+			break;
+
+		case FreeRDP_ClipboardFeatureMask:
+			settings->ClipboardFeatureMask = cnv.c;
 			break;
 
 		case FreeRDP_ClusterInfoFlags:

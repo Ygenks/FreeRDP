@@ -33,8 +33,13 @@ extern "C"
 {
 #endif
 
+	WINPR_API char* winpr_str_url_encode(const char* str, size_t len);
+	WINPR_API char* winpr_str_url_decode(const char* str, size_t len);
+
 	WINPR_API BOOL winpr_str_append(const char* what, char* buffer, size_t size,
 	                                const char* separator);
+
+	WINPR_API int winpr_asprintf(char** s, size_t* slen, const char* templ, ...);
 
 #ifndef _WIN32
 

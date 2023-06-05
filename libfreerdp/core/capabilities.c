@@ -29,6 +29,8 @@
 
 #define TAG FREERDP_TAG("core.capabilities")
 
+#define CHANNEL_CHUNK_LENGTH 1600
+
 static const char* const CAPSET_TYPE_STRINGS[] = { "Unknown",
 	                                               "General",
 	                                               "Bitmap",
@@ -2137,11 +2139,30 @@ static BOOL rdp_apply_virtual_channel_capability_set(rdpSettings* settings, cons
 	WINPR_ASSERT(settings);
 	WINPR_ASSERT(src);
 
-	if (!settings->ServerMode)
-	{
-		settings->VirtualChannelCompressionFlags = src->VirtualChannelCompressionFlags;
+	/* MS servers and clients disregard in advertising what is relevant for their own side */
+	if (settings->ServerMode && (settings->VirtualChannelCompressionFlags & VCCAPS_COMPR_SC) &&
+	    (src->VirtualChannelCompressionFlags & VCCAPS_COMPR_SC))
+		settings->VirtualChannelCompressionFlags |= VCCAPS_COMPR_SC;
+	else
+		settings->VirtualChannelCompressionFlags &= ~VCCAPS_COMPR_SC;
+
+	if (!settings->ServerMode && (settings->VirtualChannelCompressionFlags & VCCAPS_COMPR_CS_8K) &&
+	    (src->VirtualChannelCompressionFlags & VCCAPS_COMPR_CS_8K))
+		settings->VirtualChannelCompressionFlags |= VCCAPS_COMPR_CS_8K;
+	else
+		settings->VirtualChannelCompressionFlags &= ~VCCAPS_COMPR_CS_8K;
+
+	/*
+	 * When one peer does not write the VCChunkSize, the VCChunkSize must not be
+	 * larger than CHANNEL_CHUNK_LENGTH (1600) bytes.
+	 * Also prevent an invalid 0 size.
+	 */
+	if (!settings->ServerMode &&
+	    ((src->VirtualChannelChunkSize > 16256) || (src->VirtualChannelChunkSize == 0)))
+		settings->VirtualChannelChunkSize = CHANNEL_CHUNK_LENGTH;
+	else if (!settings->ServerMode)
 		settings->VirtualChannelChunkSize = src->VirtualChannelChunkSize;
-	}
+
 	return TRUE;
 }
 
@@ -2164,7 +2185,7 @@ static BOOL rdp_read_virtual_channel_capability_set(wStream* s, rdpSettings* set
 	if (Stream_GetRemainingLength(s) >= 4)
 		Stream_Read_UINT32(s, VCChunkSize); /* VCChunkSize (4 bytes) */
 	else
-		VCChunkSize = 1600;
+		VCChunkSize = UINT32_MAX; /* Use an invalid value to determine that value is not present */
 
 	settings->VirtualChannelCompressionFlags = flags;
 	settings->VirtualChannelChunkSize = VCChunkSize;
@@ -3920,7 +3941,7 @@ static BOOL rdp_apply_from_received(UINT16 type, rdpSettings* dst, const rdpSett
 		case CAPSET_TYPE_INPUT:
 			return rdp_apply_input_capability_set(dst, src);
 		case CAPSET_TYPE_VIRTUAL_CHANNEL:
-			return rdp_apply_input_capability_set(dst, src);
+			return rdp_apply_virtual_channel_capability_set(dst, src);
 		case CAPSET_TYPE_SHARE:
 			return rdp_apply_share_capability_set(dst, src);
 		case CAPSET_TYPE_COLOR_CACHE:
@@ -4306,7 +4327,7 @@ BOOL rdp_recv_get_active_header(rdpRdp* rdp, wStream* s, UINT16* pChannelId, UIN
 
 	if (rdp->settings->UseRdpSecurityLayer)
 	{
-		if (!rdp_read_security_header(s, &securityFlags, length))
+		if (!rdp_read_security_header(rdp, s, &securityFlags, length))
 			return FALSE;
 
 		if (securityFlags & SEC_ENCRYPT)
@@ -4349,7 +4370,7 @@ BOOL rdp_recv_demand_active(rdpRdp* rdp, wStream* s)
 	if (freerdp_shall_disconnect_context(rdp->context))
 		return TRUE;
 
-	if (!rdp_read_share_control_header(s, NULL, NULL, &pduType, &pduSource))
+	if (!rdp_read_share_control_header(rdp, s, NULL, NULL, &pduType, &pduSource))
 		return FALSE;
 
 	if (pduType == PDU_TYPE_DATA)

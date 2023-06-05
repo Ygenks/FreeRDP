@@ -44,6 +44,10 @@
 
 #include <openssl/evp.h>
 
+#if defined(OPENSSL_VERSION_MAJOR) && (OPENSSL_VERSION_MAJOR >= 3)
+#include <openssl/core_names.h>
+#endif
+
 #include "x509_utils.h"
 #include "crypto.h"
 #include "opensslcompat.h"
@@ -84,6 +88,7 @@ static const rdpPrivateKey tssk = { .PrivateExponent = tssk_privateExponent,
 	                                          .ModulusLength = sizeof(tssk_modulus) } };
 const rdpPrivateKey* priv_key_tssk = &tssk;
 
+#if !defined(OPENSSL_VERSION_MAJOR) || (OPENSSL_VERSION_MAJOR < 3)
 static RSA* evp_pkey_to_rsa(const rdpPrivateKey* key)
 {
 	if (!freerdp_key_is_rsa(key))
@@ -104,6 +109,7 @@ fail:
 	BIO_free_all(bio);
 	return rsa;
 }
+#endif
 
 static EVP_PKEY* evp_pkey_utils_from_pem(const char* data, size_t len, BOOL fromFile)
 {
@@ -139,6 +145,7 @@ static BOOL key_read_private(rdpPrivateKey* key)
 	if (!freerdp_key_is_rsa(key))
 		return TRUE;
 
+#if !defined(OPENSSL_VERSION_MAJOR) || (OPENSSL_VERSION_MAJOR < 3)
 	RSA* rsa = evp_pkey_to_rsa(key);
 	if (!rsa)
 	{
@@ -166,7 +173,18 @@ static BOOL key_read_private(rdpPrivateKey* key)
 	const BIGNUM* rsa_d = NULL;
 
 	RSA_get0_key(rsa, &rsa_n, &rsa_e, &rsa_d);
+#else
+	BIGNUM* rsa_e = NULL;
+	BIGNUM* rsa_n = NULL;
+	BIGNUM* rsa_d = NULL;
 
+	if (!EVP_PKEY_get_bn_param(key->evp, OSSL_PKEY_PARAM_RSA_N, &rsa_n))
+		goto fail;
+	if (!EVP_PKEY_get_bn_param(key->evp, OSSL_PKEY_PARAM_RSA_E, &rsa_e))
+		goto fail;
+	if (!EVP_PKEY_get_bn_param(key->evp, OSSL_PKEY_PARAM_RSA_D, &rsa_d))
+		goto fail;
+#endif
 	if (BN_num_bytes(rsa_e) > 4)
 	{
 		WLog_ERR(TAG, "RSA public exponent too large");
@@ -180,7 +198,13 @@ static BOOL key_read_private(rdpPrivateKey* key)
 		goto fail;
 	rc = TRUE;
 fail:
+#if !defined(OPENSSL_VERSION_MAJOR) || (OPENSSL_VERSION_MAJOR < 3)
 	RSA_free(rsa);
+#else
+	BN_free(rsa_d);
+	BN_free(rsa_e);
+	BN_free(rsa_n);
+#endif
 	return rc;
 }
 
@@ -297,12 +321,6 @@ const BYTE* freerdp_key_get_exponent(const rdpPrivateKey* key, size_t* plength)
 	return key->PrivateExponent;
 }
 
-RSA* freerdp_key_get_RSA(const rdpPrivateKey* key)
-{
-	WINPR_ASSERT(key);
-	return evp_pkey_to_rsa(key);
-}
-
 EVP_PKEY* freerdp_key_get_evp_pkey(const rdpPrivateKey* key)
 {
 	WINPR_ASSERT(key);
@@ -321,4 +339,179 @@ BOOL freerdp_key_is_rsa(const rdpPrivateKey* key)
 
 	WINPR_ASSERT(key->evp);
 	return (EVP_PKEY_id(key->evp) == EVP_PKEY_RSA);
+}
+
+size_t freerdp_key_get_bits(const rdpPrivateKey* key)
+{
+	int rc = -1;
+#if !defined(OPENSSL_VERSION_MAJOR) || (OPENSSL_VERSION_MAJOR < 3)
+	RSA* rsa = evp_pkey_to_rsa(key);
+	if (rsa)
+	{
+		rc = RSA_bits(rsa);
+		RSA_free(rsa);
+	}
+#else
+	rc = EVP_PKEY_get_bits(key->evp);
+#endif
+
+	return rc;
+}
+
+BOOL freerdp_key_generate(rdpPrivateKey* key, size_t key_length)
+{
+	BOOL rc = FALSE;
+
+#if !defined(OPENSSL_VERSION_MAJOR) || (OPENSSL_VERSION_MAJOR < 3)
+	RSA* rsa = NULL;
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER)
+	rsa = RSA_generate_key(key_length, RSA_F4, NULL, NULL);
+#else
+	{
+		BIGNUM* bn = BN_secure_new();
+
+		if (!bn)
+			return FALSE;
+
+		rsa = RSA_new();
+
+		if (!rsa)
+		{
+			BN_clear_free(bn);
+			return FALSE;
+		}
+
+		BN_set_word(bn, RSA_F4);
+		const int res = RSA_generate_key_ex(rsa, key_length, bn, NULL);
+		BN_clear_free(bn);
+
+		if (res != 1)
+			return FALSE;
+	}
+#endif
+
+	if (!EVP_PKEY_assign_RSA(key->evp, rsa))
+	{
+		RSA_free(rsa);
+		return FALSE;
+	}
+	rc = TRUE;
+#else
+	EVP_PKEY_CTX* pctx = EVP_PKEY_CTX_new_from_name(NULL, "RSA", NULL);
+	if (!pctx)
+		return FALSE;
+
+	if (EVP_PKEY_keygen_init(pctx) != 1)
+		goto fail;
+
+	if (EVP_PKEY_CTX_set_rsa_keygen_bits(pctx, key_length) != 1)
+		goto fail;
+
+	EVP_PKEY_free(key->evp);
+	key->evp = NULL;
+
+	if (EVP_PKEY_generate(pctx, &key->evp) != 1)
+		goto fail;
+
+	rc = TRUE;
+fail:
+	EVP_PKEY_CTX_free(pctx);
+#endif
+	return rc;
+}
+
+char* freerdp_key_get_param(const rdpPrivateKey* key, enum FREERDP_KEY_PARAM param, size_t* plength)
+{
+	BYTE* buf = NULL;
+
+	WINPR_ASSERT(key);
+	WINPR_ASSERT(plength);
+
+	*plength = 0;
+
+	BIGNUM* bn = NULL;
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+
+	const char* pk = NULL;
+	switch (param)
+	{
+		case FREERDP_KEY_PARAM_RSA_D:
+			pk = OSSL_PKEY_PARAM_RSA_D;
+			break;
+		case FREERDP_KEY_PARAM_RSA_E:
+			pk = OSSL_PKEY_PARAM_RSA_E;
+			break;
+		case FREERDP_KEY_PARAM_RSA_N:
+			pk = OSSL_PKEY_PARAM_RSA_N;
+			break;
+		default:
+			return NULL;
+	}
+
+	if (!EVP_PKEY_get_bn_param(key->evp, pk, &bn))
+		return NULL;
+#else
+	{
+		const RSA* rsa = EVP_PKEY_get0_RSA(key->evp);
+		if (!rsa)
+			return NULL;
+
+		const BIGNUM* cbn = NULL;
+		switch (param)
+		{
+			case FREERDP_KEY_PARAM_RSA_D:
+				cbn = RSA_get0_d(rsa);
+				break;
+			case FREERDP_KEY_PARAM_RSA_E:
+				cbn = RSA_get0_e(rsa);
+				break;
+			case FREERDP_KEY_PARAM_RSA_N:
+				cbn = RSA_get0_n(rsa);
+				break;
+			default:
+				return NULL;
+		}
+		if (!cbn)
+			return NULL;
+		bn = BN_dup(cbn);
+		if (!bn)
+			return NULL;
+	}
+#endif
+
+	const int length = BN_num_bytes(bn);
+	if (length < 0)
+		goto fail;
+
+	const size_t alloc_size = (size_t)length + 1ull;
+	buf = calloc(alloc_size, sizeof(BYTE));
+	if (!buf)
+		goto fail;
+
+	const int bnlen = BN_bn2bin(bn, buf);
+	if (bnlen != length)
+	{
+		free(buf);
+		buf = NULL;
+	}
+	else
+		*plength = length;
+
+fail:
+	BN_free(bn);
+	return buf;
+}
+
+WINPR_DIGEST_CTX* freerdp_key_digest_sign(rdpPrivateKey* key, WINPR_MD_TYPE digest)
+{
+	WINPR_DIGEST_CTX* md_ctx = winpr_Digest_New();
+	if (!md_ctx)
+		return NULL;
+
+	if (!winpr_DigestSign_Init(md_ctx, digest, key->evp))
+	{
+		winpr_Digest_Free(md_ctx);
+		return NULL;
+	}
+	return md_ctx;
 }

@@ -116,7 +116,9 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	  "Client Build Number sent to server (influences smartcard behaviour, see [MS-RDPESC])" },
 	{ "client-hostname", COMMAND_LINE_VALUE_REQUIRED, "<name>", NULL, NULL, -1, NULL,
 	  "Client Hostname to send to server" },
-	{ "clipboard", COMMAND_LINE_VALUE_BOOL | COMMAND_LINE_VALUE_OPTIONAL, "[use-selection:<atom>]",
+	{ "clipboard", COMMAND_LINE_VALUE_BOOL | COMMAND_LINE_VALUE_OPTIONAL,
+	  "[[use-selection:<atom>],[direction-to:[all|local|remote|off]],[files-to[:all|local|remote|"
+	  "off]]],",
 	  BoolValueTrue, NULL, -1, NULL,
 	  "Redirect clipboard.                       "
 	  " * use-selection:<atom>  ... (X11) Specify which X selection to access. Default is "
@@ -163,6 +165,10 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	  "smooth fonts (ClearType)" },
 	{ "frame-ack", COMMAND_LINE_VALUE_REQUIRED, "<number>", NULL, NULL, -1, NULL,
 	  "Number of frame acknowledgement" },
+	{ "args-from", COMMAND_LINE_VALUE_REQUIRED, "<file>|stdin|fd:<number>", NULL, NULL, -1, NULL,
+	  "Read command line from a file, stdin or file descriptor. This argument can not be combined "
+	  "with any other. "
+	  "Provide one argument per line." },
 	{ "from-stdin", COMMAND_LINE_VALUE_OPTIONAL, "force", NULL, NULL, -1, NULL,
 	  "Read credentials from stdin. With <force> the prompt is done before connection, otherwise "
 	  "on server request." },

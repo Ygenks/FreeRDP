@@ -126,7 +126,8 @@ extern "C"
 	                                char** domain, rdp_auth_reason reason);
 	typedef BOOL (*pChooseSmartcard)(freerdp* instance, SmartcardCertInfo** cert_list, DWORD count,
 	                                 DWORD* choice, BOOL gateway);
-	typedef BOOL (*pGetAadAuthCode)(freerdp* instance, const char* hostname, char** code);
+	typedef BOOL (*pGetAadAuthCode)(freerdp* instance, const char* hostname, char** code,
+	                                const char** client_id, const char** redirect_uri);
 
 	/** @brief Callback used if user interaction is required to accept
 	 *         an unknown certificate.
@@ -315,8 +316,9 @@ extern "C"
 		UINT64 paddingC[64 - 46];          /* 46 */
 
 		ALIGN64 rdpStreamDumpContext* dump; /* 64 */
+		ALIGN64 wLog* log;                  /* 65 */
 
-		UINT64 paddingD[96 - 65];  /* 65 */
+		UINT64 paddingD[96 - 66];  /* 66 */
 		UINT64 paddingE[128 - 96]; /* 96 */
 	};
 

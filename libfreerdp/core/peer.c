@@ -256,13 +256,18 @@ static BOOL freerdp_peer_initialize(freerdp_peer* client)
 		return FALSE;
 	}
 
-	if (!freerdp_certificate_is_rdp_security_compatible(cert))
+	if (freerdp_settings_get_bool(settings, FreeRDP_RdpSecurity))
 	{
-		if (!freerdp_settings_set_bool(settings, FreeRDP_RdpSecurity, FALSE))
-			return FALSE;
-		if (!freerdp_settings_set_bool(settings, FreeRDP_UseRdpSecurityLayer, FALSE))
-			return FALSE;
+
+		if (!freerdp_certificate_is_rdp_security_compatible(cert))
+		{
+			if (!freerdp_settings_set_bool(settings, FreeRDP_RdpSecurity, FALSE))
+				return FALSE;
+			if (!freerdp_settings_set_bool(settings, FreeRDP_UseRdpSecurityLayer, FALSE))
+				return FALSE;
+		}
 	}
+
 	if (!rdp_server_transition_to_state(rdp, CONNECTION_STATE_INITIAL))
 		return FALSE;
 
@@ -340,13 +345,14 @@ static state_run_t peer_recv_data_pdu(freerdp_peer* client, wStream* s, UINT16 t
 	update = client->context->update;
 	WINPR_ASSERT(update);
 
-	if (!rdp_read_share_data_header(s, &length, &type, &share_id, &compressed_type,
-	                                &compressed_len))
+	if (!rdp_read_share_data_header(client->context->rdp, s, &length, &type, &share_id,
+	                                &compressed_type, &compressed_len))
 		return STATE_RUN_FAILED;
 
 #ifdef WITH_DEBUG_RDP
-	WLog_DBG(TAG, "recv %s Data PDU (0x%02" PRIX8 "), length: %" PRIu16 "",
-	         data_pdu_type_to_string(type), type, length);
+	WLog_Print(client->context->rdp, WLOG_DEBUG,
+	           "recv %s Data PDU (0x%02" PRIX8 "), length: %" PRIu16 "",
+	           data_pdu_type_to_string(type), type, length);
 #endif
 
 	switch (type)
@@ -444,7 +450,7 @@ static state_run_t peer_recv_tpkt_pdu(freerdp_peer* client, wStream* s)
 
 	if (rdp_get_state(rdp) <= CONNECTION_STATE_LICENSING)
 	{
-		if (!rdp_read_security_header(s, &securityFlags, &length))
+		if (!rdp_read_security_header(rdp, s, &securityFlags, &length))
 			return STATE_RUN_FAILED;
 		if (securityFlags & SEC_ENCRYPT)
 		{
@@ -456,7 +462,7 @@ static state_run_t peer_recv_tpkt_pdu(freerdp_peer* client, wStream* s)
 
 	if (settings->UseRdpSecurityLayer)
 	{
-		if (!rdp_read_security_header(s, &securityFlags, &length))
+		if (!rdp_read_security_header(rdp, s, &securityFlags, &length))
 			return STATE_RUN_FAILED;
 
 		if (securityFlags & SEC_ENCRYPT)
@@ -470,7 +476,7 @@ static state_run_t peer_recv_tpkt_pdu(freerdp_peer* client, wStream* s)
 	{
 		char buffer[256] = { 0 };
 		UINT16 pduLength, remain;
-		if (!rdp_read_share_control_header(s, &pduLength, &remain, &pduType, &pduSource))
+		if (!rdp_read_share_control_header(rdp, s, &pduLength, &remain, &pduType, &pduSource))
 			return STATE_RUN_FAILED;
 
 		settings->PduSource = pduSource;
@@ -508,7 +514,7 @@ static state_run_t peer_recv_tpkt_pdu(freerdp_peer* client, wStream* s)
 	{
 		if (!settings->UseRdpSecurityLayer)
 		{
-			if (!rdp_read_security_header(s, &securityFlags, NULL))
+			if (!rdp_read_security_header(rdp, s, &securityFlags, NULL))
 				return STATE_RUN_FAILED;
 		}
 
@@ -529,7 +535,6 @@ static state_run_t peer_recv_handle_auto_detect(freerdp_peer* client, wStream* s
 {
 	state_run_t ret = STATE_RUN_FAILED;
 	rdpRdp* rdp;
-	rdpSettings* settings;
 
 	WINPR_ASSERT(client);
 	WINPR_ASSERT(s);
@@ -538,7 +543,7 @@ static state_run_t peer_recv_handle_auto_detect(freerdp_peer* client, wStream* s
 	rdp = client->context->rdp;
 	WINPR_ASSERT(rdp);
 
-	settings = rdp->settings;
+	const rdpSettings* settings = client->context->settings;
 	WINPR_ASSERT(settings);
 
 	if (freerdp_settings_get_bool(settings, FreeRDP_NetworkAutoDetect))
@@ -546,40 +551,46 @@ static state_run_t peer_recv_handle_auto_detect(freerdp_peer* client, wStream* s
 		switch (rdp_get_state(rdp))
 		{
 			case CONNECTION_STATE_CONNECT_TIME_AUTO_DETECT_REQUEST:
-			{
-				if (autodetect_send_connecttime_rtt_measure_request(rdp->autodetect,
-				                                                    RDP_TRANSPORT_TCP, 0x23))
-					ret = STATE_RUN_SUCCESS;
-				if (!rdp_server_transition_to_state(
-				        rdp, CONNECTION_STATE_CONNECT_TIME_AUTO_DETECT_RESPONSE))
-					return STATE_RUN_FAILED;
-			}
-			break;
+				autodetect_on_connect_time_auto_detect_begin(rdp->autodetect);
+				switch (autodetect_get_state(rdp->autodetect))
+				{
+					case FREERDP_AUTODETECT_STATE_REQUEST:
+						ret = STATE_RUN_SUCCESS;
+						if (!rdp_server_transition_to_state(
+						        rdp, CONNECTION_STATE_CONNECT_TIME_AUTO_DETECT_RESPONSE))
+							return STATE_RUN_FAILED;
+						break;
+					case FREERDP_AUTODETECT_STATE_COMPLETE:
+						ret = STATE_RUN_CONTINUE; /* Rerun in next state */
+						if (!rdp_server_transition_to_state(rdp, CONNECTION_STATE_LICENSING))
+							return STATE_RUN_FAILED;
+						break;
+					default:
+						break;
+				}
+				break;
 			case CONNECTION_STATE_CONNECT_TIME_AUTO_DETECT_RESPONSE:
-			{
 				ret = peer_recv_pdu(client, s);
 				if (state_run_success(ret))
 				{
+					autodetect_on_connect_time_auto_detect_progress(rdp->autodetect);
 					switch (autodetect_get_state(rdp->autodetect))
 					{
-						case AUTODETECT_STATE_COMPLETE:
-							if (!rdp_server_transition_to_state(rdp, CONNECTION_STATE_LICENSING))
-								return STATE_RUN_FAILED;
-							ret = STATE_RUN_CONTINUE; /* Rerun in next state */
+						case FREERDP_AUTODETECT_STATE_REQUEST:
+							ret = STATE_RUN_SUCCESS;
 							break;
-						case AUTODETECT_STATE_RESPONSE:
+						case FREERDP_AUTODETECT_STATE_COMPLETE:
+							ret = STATE_RUN_CONTINUE; /* Rerun in next state */
 							if (!rdp_server_transition_to_state(rdp, CONNECTION_STATE_LICENSING))
 								return STATE_RUN_FAILED;
-							ret = STATE_RUN_CONTINUE; /* Rerun in next state */
 							break;
 						default:
 							break;
 					}
 				}
-			}
-			break;
+				break;
 			default:
-				WLog_ERR(TAG, "Invalid autodetect state %s", rdp_get_state_string(rdp));
+				WINPR_ASSERT(FALSE);
 				break;
 		}
 	}
@@ -927,9 +938,6 @@ static state_run_t peer_recv_callback_internal(rdpTransport* transport, wStream*
 			break;
 
 		case CONNECTION_STATE_CONNECT_TIME_AUTO_DETECT_REQUEST:
-			ret = peer_recv_handle_auto_detect(client, s);
-			break;
-
 		case CONNECTION_STATE_CONNECT_TIME_AUTO_DETECT_RESPONSE:
 			ret = peer_recv_handle_auto_detect(client, s);
 			break;
@@ -1503,12 +1511,14 @@ BOOL freerdp_peer_context_new_ex(freerdp_peer* client, const rdpSettings* settin
 	rdpContext* context;
 	BOOL ret = TRUE;
 
-	rdp_log_build_warnings();
-
 	if (!client)
 		return FALSE;
 
 	if (!(context = (rdpContext*)calloc(1, client->ContextSize)))
+		goto fail;
+
+	context->log = WLog_Get(TAG);
+	if (!context->log)
 		goto fail;
 
 	client->context = context;
@@ -1530,6 +1540,8 @@ BOOL freerdp_peer_context_new_ex(freerdp_peer* client, const rdpSettings* settin
 
 	if (!(rdp = rdp_new(context)))
 		goto fail;
+
+	rdp_log_build_warnings(rdp);
 
 #if defined(WITH_FREERDP_DEPRECATED)
 	client->update = rdp->update;
