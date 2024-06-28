@@ -1,7 +1,8 @@
 # FreeRDP: A Remote Desktop Protocol Implementation
 # FreeRDP SDL Client
 #
-# Copyright 2022 Armin Novak <anovak@thincast.com>
+# Copyright 2024 Armin Novak <anovak@thincast.com>
+# Copyright 2024 Thincast Technologies GmbH
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,29 +15,42 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 cmake_minimum_required(VERSION 3.13)
 
-project(sdl-client CXX)
+if(POLICY CMP0091)
+	cmake_policy(SET CMP0091 NEW)
+endif()
+if (NOT FREERDP_DEFAULT_PROJECT_VERSION)
+	set(FREERDP_DEFAULT_PROJECT_VERSION "1.0.0.0")
+endif()
+
+project(sdl-freerdp
+	LANGUAGES CXX
+	VERSION ${FREERDP_DEFAULT_PROJECT_VERSION}
+)
+
+message("project ${PROJECT_NAME} is using version ${PROJECT_VERSION}")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 
-option(CMAKE_COLOR_MAKEFILE "colorful CMake makefile" ON)
-option(CMAKE_VERBOSE_MAKEFILE "verbose CMake makefile" ON)
-option(CMAKE_POSITION_INDEPENDENT_CODE "build with position independent code (-fPIC or -fPIE)" ON)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/)
+include(CommonConfigOptions)
 
 include(ConfigureFreeRDP)
 
-include(GNUInstallDirsWrapper)
+option(WITH_DEBUG_SDL_EVENTS "[dangerous, not for release builds!] Debug SDL events" ${DEFAULT_DEBUG_OPTION})
+option(WITH_DEBUG_SDL_KBD_EVENTS "[dangerous, not for release builds!] Debug SDL keyboard events" ${DEFAULT_DEBUG_OPTION})
+option(WITH_WIN_CONSOLE "Build ${PROJECT_NAME} with console support" ON)
+option(WITH_SDL_LINK_SHARED "link SDL dynamic or static" ON)
 
-# RPATH configuration
-include(ConfigureRPATH)
+if(WITH_WIN_CONSOLE)
+  set(WIN32_GUI_FLAG "TRUE")
+else()
+  set(WIN32_GUI_FLAG "WIN32")
+endif()
 
-option(WITH_DEBUG_SDL_EVENTS "[dangerous, not for release builds!] Debug SDL events" OFF)
-option(WITH_DEBUG_SDL_KBD_EVENTS "[dangerous, not for release builds!] Debug SDL keyboard events" OFF)
 
 if (WITH_DEBUG_SDL_EVENTS)
 	add_definitions(-DWITH_DEBUG_SDL_EVENTS)
@@ -45,65 +59,47 @@ if (WITH_DEBUG_SDL_KBD_EVENTS)
 	add_definitions(-DWITH_DEBUG_SDL_KBD_EVENTS)
 endif()
 
-find_package(SDL2 REQUIRED)
-include_directories(${SDL2_INCLUDE_DIR})
-include_directories(${SDL2_INCLUDE_DIRS})
+include(CMakeDependentOption)
 
-find_package(Threads REQUIRED)
+find_package(SDL2)
+find_package(SDL3)
 
-set(SRCS
-    sdl_types.hpp
-    sdl_utils.cpp
-    sdl_utils.hpp
-    sdl_kbd.cpp
-    sdl_kbd.hpp
-    sdl_touch.cpp
-    sdl_touch.hpp
-    sdl_pointer.cpp
-    sdl_pointer.hpp
-    sdl_disp.cpp
-    sdl_disp.hpp
-    sdl_monitor.cpp
-    sdl_monitor.hpp
-    sdl_freerdp.hpp
-    sdl_freerdp.cpp
-    sdl_channels.hpp
-    sdl_channels.cpp)
+cmake_dependent_option(WITH_CLIENT_SDL_VERSIONED "append sdl version to client binaries" OFF WITH_CLIENT_SDL OFF)
+cmake_dependent_option(WITH_CLIENT_SDL2 "[experimental] build experimental SDL2 client" ${SDL2_FOUND} WITH_CLIENT_SDL OFF)
+cmake_dependent_option(WITH_CLIENT_SDL3 "[experimental] build experimental SDL3 client" ${SDL3_FOUND} WITH_CLIENT_SDL OFF)
 
-set(LIBS
-	${SDL2_LIBRARIES}
-        winpr
-        freerdp
-        freerdp-client
-        Threads::Threads
-    )
-
-option(WITH_WEBVIEW "Build with QtWebEngine support for AAD login popup browser" OFF)
-if (WITH_WEBVIEW)
-  find_package(Qt5 COMPONENTS WebEngineWidgets REQUIRED)
-
-  list(APPEND SRCS
-      sdl_webview.cpp
-      sdl_webview.hpp
-      )
-  list(APPEND LIBS Qt5::WebEngineWidgets)
+if (WITH_CLIENT_SDL2 AND WITH_CLIENT_SDL3)
+	message("Building both, SDL2 and SDL3 clients, forcing WITH_CLIENT_SDL_VERSIONED=ON")
+	set(WITH_CLIENT_SDL_VERSIONED ON)
 endif()
 
-add_executable(${PROJECT_NAME}
-	${SRCS}
-    )
-
-if (WITH_WEBVIEW)
-	target_compile_definitions(
-		${PROJECT_NAME} PRIVATE
-		-DWITH_WEBVIEW
-	)
+if (NOT SDL2_FOUND AND NOT SDL3_FOUND)
+	message(FATAL_ERROR "No SDL library detected, giving up. Install SDL2 or SDL3 development package to fix")
 endif()
 
-set_target_properties(${PROJECT_NAME}
-    PROPERTIES
-    OUTPUT_NAME "sdl-freerdp"
-    )
-target_link_libraries(${PROJECT_NAME} PRIVATE ${LIBS})
-set_property(TARGET ${PROJECT_NAME} PROPERTY FOLDER "Client/SDL")
-install(TARGETS ${PROJECT_NAME} DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client)
+# Configuration settings for manpages
+if (NOT WITH_FULL_CONFIG_PATH AND "${VENDOR}" STREQUAL "${PRODUCT}")
+	string(TOLOWER "${VENDOR}" VENDOR_PRODUCT)
+else()
+	set(VENDOR_PRODUCT "${VENDOR}/${PRODUCT}")
+endif()
+
+add_subdirectory(common)
+include_directories(common)
+
+if (WITH_CLIENT_SDL2)
+	if (SDL2_FOUND)
+		add_subdirectory(SDL2)
+	else()
+		message(WARNING "SDL2 requested but not found, continuing build without SDL2 client")
+	endif()
+endif()
+
+if (WITH_CLIENT_SDL3)
+	if (SDL3_FOUND)
+		add_subdirectory(SDL3)
+	else()
+		message(WARNING "SDL3 requested but not found, continuing build without SDL3 client")
+	endif()
+endif()
+

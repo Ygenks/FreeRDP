@@ -24,6 +24,7 @@ typedef enum
 {
 	TRANSPORT_LAYER_TCP,
 	TRANSPORT_LAYER_TLS,
+	TRANSPORT_LAYER_NAMEDPIPE,
 	TRANSPORT_LAYER_TSG,
 	TRANSPORT_LAYER_TSG_TLS,
 	TRANSPORT_LAYER_CLOSED
@@ -34,7 +35,6 @@ typedef enum
 #include "rdstls.h"
 
 #include "gateway/tsg.h"
-#include "gateway/rdg.h"
 
 #include <winpr/sspi.h>
 #include <winpr/wlog.h>
@@ -57,11 +57,27 @@ typedef state_run_t (*TransportRecv)(rdpTransport* transport, wStream* stream, v
 FREERDP_LOCAL wStream* transport_send_stream_init(rdpTransport* transport, size_t size);
 FREERDP_LOCAL BOOL transport_connect(rdpTransport* transport, const char* hostname, UINT16 port,
                                      DWORD timeout);
+FREERDP_LOCAL BOOL transport_connect_childsession(rdpTransport* transport);
+
+/**! \brief Attach a socket to the transport layer
+ *
+ * The ownership of the socket provided by \b sockfd is taken if and only if the function is
+ * successful. In such a case the caller must no longer close or otherwise use the socket. If the
+ * function fails it is up to the caller to close the socket.
+ *
+ * The implementation can be overridden by
+ * transport_set_io_callbacks(rdpTransportIo::TransportAttach)
+ *
+ * \param transport The transport instance to attach the socket to
+ * \param sockfd The socket to attach to the transport
+ *
+ * \return \b TRUE in case of success, \b FALSE otherwise.
+ */
 FREERDP_LOCAL BOOL transport_attach(rdpTransport* transport, int sockfd);
 FREERDP_LOCAL BOOL transport_disconnect(rdpTransport* transport);
 FREERDP_LOCAL BOOL transport_connect_rdp(rdpTransport* transport);
 FREERDP_LOCAL BOOL transport_connect_tls(rdpTransport* transport);
-FREERDP_LOCAL BOOL transport_connect_nla(rdpTransport* transport);
+FREERDP_LOCAL BOOL transport_connect_nla(rdpTransport* transport, BOOL earlyUserAuth);
 FREERDP_LOCAL BOOL transport_connect_rdstls(rdpTransport* transport);
 FREERDP_LOCAL BOOL transport_connect_aad(rdpTransport* transport);
 FREERDP_LOCAL BOOL transport_accept_rdp(rdpTransport* transport);
@@ -71,6 +87,9 @@ FREERDP_LOCAL BOOL transport_accept_rdstls(rdpTransport* transport);
 
 FREERDP_LOCAL int transport_read_pdu(rdpTransport* transport, wStream* s);
 FREERDP_LOCAL int transport_write(rdpTransport* transport, wStream* s);
+
+FREERDP_LOCAL BOOL transport_get_public_key(rdpTransport* transport, const BYTE** data,
+                                            DWORD* length);
 
 #if defined(WITH_FREERDP_DEPRECATED)
 FREERDP_LOCAL void transport_get_fds(rdpTransport* transport, void** rfds, int* rcount);
@@ -127,7 +146,11 @@ FREERDP_LOCAL BOOL transport_set_recv_callbacks(rdpTransport* transport, Transpo
 FREERDP_LOCAL int transport_tcp_connect(rdpTransport* transport, const char* hostname, int port,
                                         DWORD timeout);
 
-FREERDP_LOCAL rdpTransport* transport_new(rdpContext* context);
 FREERDP_LOCAL void transport_free(rdpTransport* transport);
+
+WINPR_ATTR_MALLOC(transport_free, 1)
+FREERDP_LOCAL rdpTransport* transport_new(rdpContext* context);
+
+FREERDP_LOCAL void transport_set_early_user_auth_mode(rdpTransport* transport, BOOL EUAMode);
 
 #endif /* FREERDP_LIB_CORE_TRANSPORT_H */

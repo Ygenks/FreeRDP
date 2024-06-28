@@ -18,6 +18,8 @@
 set(MODULE_NAME "freerdp-core")
 set(MODULE_PREFIX "FREERDP_CORE")
 
+CHECK_INCLUDE_FILES("ctype.h;linux/vm_sockets.h" HAVE_AF_VSOCK_H)
+
 freerdp_definition_add(-DEXT_PATH="${FREERDP_EXTENSION_PATH}")
 
 freerdp_include_directory_add(${OPENSSL_INCLUDE_DIR})
@@ -43,6 +45,12 @@ set(${MODULE_PREFIX}_GATEWAY_SRCS
 	${${MODULE_PREFIX}_GATEWAY_DIR}/rts_signature.h
 	${${MODULE_PREFIX}_GATEWAY_DIR}/http.c
 	${${MODULE_PREFIX}_GATEWAY_DIR}/http.h
+	${${MODULE_PREFIX}_GATEWAY_DIR}/websocket.c
+	${${MODULE_PREFIX}_GATEWAY_DIR}/websocket.h
+	${${MODULE_PREFIX}_GATEWAY_DIR}/wst.c
+	${${MODULE_PREFIX}_GATEWAY_DIR}/wst.h
+	${${MODULE_PREFIX}_GATEWAY_DIR}/arm.c
+	${${MODULE_PREFIX}_GATEWAY_DIR}/arm.h
 	${${MODULE_PREFIX}_GATEWAY_DIR}/ncacn_http.c
 	${${MODULE_PREFIX}_GATEWAY_DIR}/ncacn_http.h)
 
@@ -101,6 +109,7 @@ set(${MODULE_PREFIX}_SRCS
 	multitransport.h
 	timezone.c
 	timezone.h
+	childsession.c
 	rdp.c
 	rdp.h
 	tcp.c

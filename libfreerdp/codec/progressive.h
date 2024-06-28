@@ -22,6 +22,7 @@
 #define INTERNAL_CODEC_PROGRESSIVE_H
 
 #include <winpr/wlog.h>
+#include <winpr/pool.h>
 #include <winpr/collections.h>
 
 #include <freerdp/codec/rfx.h>
@@ -31,15 +32,6 @@
 #define RFX_TILE_DIFFERENCE 0x01
 
 #define RFX_DWT_REDUCE_EXTRAPOLATE 0x01
-
-#define PROGRESSIVE_WBT_SYNC 0xCCC0
-#define PROGRESSIVE_WBT_FRAME_BEGIN 0xCCC1
-#define PROGRESSIVE_WBT_FRAME_END 0xCCC2
-#define PROGRESSIVE_WBT_CONTEXT 0xCCC3
-#define PROGRESSIVE_WBT_REGION 0xCCC4
-#define PROGRESSIVE_WBT_TILE_SIMPLE 0xCCC5
-#define PROGRESSIVE_WBT_TILE_FIRST 0xCCC6
-#define PROGRESSIVE_WBT_TILE_UPGRADE 0xCCC7
 
 typedef struct
 {
@@ -148,7 +140,18 @@ typedef struct
 	RFX_COMPONENT_CODEC_QUANT crProgQuant;
 } RFX_PROGRESSIVE_TILE;
 
+typedef struct S_PROGRESSIVE_CONTEXT PROGRESSIVE_CONTEXT;
+typedef struct S_PROGRESSIVE_BLOCK_REGION PROGRESSIVE_BLOCK_REGION;
+
 typedef struct
+{
+	PROGRESSIVE_CONTEXT* progressive;
+	PROGRESSIVE_BLOCK_REGION* region;
+	const PROGRESSIVE_BLOCK_CONTEXT* context;
+	RFX_PROGRESSIVE_TILE* tile;
+} PROGRESSIVE_TILE_PROCESS_WORK_PARAM;
+
+struct S_PROGRESSIVE_BLOCK_REGION
 {
 	UINT16 blockType;
 	UINT32 blockLen;
@@ -165,7 +168,7 @@ typedef struct
 	RFX_COMPONENT_CODEC_QUANT quantVals[0x100];
 	RFX_PROGRESSIVE_CODEC_QUANT quantProgVals[0x100];
 	RFX_PROGRESSIVE_TILE* tiles[0x10000];
-} PROGRESSIVE_BLOCK_REGION;
+};
 
 typedef struct
 {
@@ -225,6 +228,8 @@ struct S_PROGRESSIVE_CONTEXT
 	wStream* buffer;
 	wStream* rects;
 	RFX_CONTEXT* rfx_context;
+	PROGRESSIVE_TILE_PROCESS_WORK_PARAM params[0x10000];
+	PTP_WORK work_objects[0x10000];
 };
 
 #endif /* INTERNAL_CODEC_PROGRESSIVE_H */

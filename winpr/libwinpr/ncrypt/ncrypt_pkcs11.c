@@ -18,7 +18,6 @@
  */
 
 #include <stdlib.h>
-#include <pkcs11-helper-1.0/pkcs11.h>
 
 #include <winpr/library.h>
 #include <winpr/assert.h>
@@ -28,6 +27,9 @@
 
 #include "../log.h"
 #include "ncrypt.h"
+
+/* https://github.com/latchset/pkcs11-headers/blob/main/public-domain/3.1/pkcs11.h */
+#include "pkcs11-headers/pkcs11.h"
 
 #define TAG WINPR_TAG("ncryptp11")
 
@@ -42,6 +44,7 @@ typedef struct
 
 	HANDLE library;
 	CK_FUNCTION_LIST_PTR p11;
+	char* modulePath;
 } NCryptP11ProviderHandle;
 
 /** @brief a handle returned by NCryptOpenKey */
@@ -104,13 +107,15 @@ static CK_ATTRIBUTE public_key_filter[] = {
 static SECURITY_STATUS NCryptP11StorageProvider_dtor(NCRYPT_HANDLE handle)
 {
 	NCryptP11ProviderHandle* provider = (NCryptP11ProviderHandle*)handle;
-	CK_RV rv;
+	CK_RV rv = 0;
 
 	WINPR_ASSERT(provider);
 	rv = provider->p11->C_Finalize(NULL);
 	if (rv != CKR_OK)
 	{
 	}
+
+	free(provider->modulePath);
 
 	if (provider->library)
 		FreeLibrary(provider->library);
@@ -130,9 +135,7 @@ static void fix_padded_string(char* str, size_t maxlen)
 
 static BOOL attributes_have_unallocated_buffers(CK_ATTRIBUTE_PTR attributes, CK_ULONG count)
 {
-	CK_ULONG i;
-
-	for (i = 0; i < count; i++)
+	for (CK_ULONG i = 0; i < count; i++)
 	{
 		if (!attributes[i].pValue && (attributes[i].ulValueLen != CK_UNAVAILABLE_INFORMATION))
 			return TRUE;
@@ -143,6 +146,7 @@ static BOOL attributes_have_unallocated_buffers(CK_ATTRIBUTE_PTR attributes, CK_
 
 static BOOL attribute_allocate_attribute_array(CK_ATTRIBUTE_PTR attribute)
 {
+	WINPR_ASSERT(attribute);
 	attribute->pValue = calloc(attribute->ulValueLen, sizeof(void*));
 	return !!attribute->pValue;
 }
@@ -161,10 +165,9 @@ static BOOL attribute_allocate_buffer(CK_ATTRIBUTE_PTR attribute)
 
 static BOOL attributes_allocate_buffers(CK_ATTRIBUTE_PTR attributes, CK_ULONG count)
 {
-	CK_ULONG i;
 	BOOL ret = TRUE;
 
-	for (i = 0; i < count; i++)
+	for (CK_ULONG i = 0; i < count; i++)
 	{
 		if (attributes[i].pValue || (attributes[i].ulValueLen == CK_UNAVAILABLE_INFORMATION))
 			continue;
@@ -193,7 +196,7 @@ static CK_RV object_load_attributes(NCryptP11ProviderHandle* provider, CK_SESSIO
                                     CK_OBJECT_HANDLE object, CK_ATTRIBUTE_PTR attributes,
                                     CK_ULONG count)
 {
-	CK_RV rv;
+	CK_RV rv = 0;
 
 	WINPR_ASSERT(provider);
 	WINPR_ASSERT(provider->p11);
@@ -207,6 +210,7 @@ static CK_RV object_load_attributes(NCryptP11ProviderHandle* provider, CK_SESSIO
 			if (!attributes_have_unallocated_buffers(attributes, count))
 				return rv;
 			/* fallthrough */
+			WINPR_FALLTHROUGH
 		case CKR_ATTRIBUTE_SENSITIVE:
 		case CKR_ATTRIBUTE_TYPE_INVALID:
 		case CKR_BUFFER_TOO_SMALL:
@@ -334,26 +338,24 @@ static const char* CK_RV_error_string(CK_RV rv)
 
 static SECURITY_STATUS collect_keys(NCryptP11ProviderHandle* provider, P11EnumKeysState* state)
 {
-	CK_RV rv;
-	CK_ULONG i, j, nslotObjects;
 	CK_OBJECT_HANDLE slotObjects[MAX_KEYS_PER_SLOT] = { 0 };
 	const char* step = NULL;
-	CK_FUNCTION_LIST_PTR p11;
 
 	WINPR_ASSERT(provider);
 
-	p11 = provider->p11;
+	CK_FUNCTION_LIST_PTR p11 = provider->p11;
 	WINPR_ASSERT(p11);
 
+	WLog_DBG(TAG, "checking %" PRIu32 " slots for valid keys...", state->nslots);
 	state->nKeys = 0;
-	for (i = 0; i < state->nslots; i++)
+	for (CK_ULONG i = 0; i < state->nslots; i++)
 	{
 		CK_SESSION_HANDLE session = (CK_SESSION_HANDLE)NULL;
-		CK_SLOT_INFO slotInfo;
-		CK_TOKEN_INFO tokenInfo;
+		CK_SLOT_INFO slotInfo = { 0 };
+		CK_TOKEN_INFO tokenInfo = { 0 };
 
 		WINPR_ASSERT(p11->C_GetSlotInfo);
-		rv = p11->C_GetSlotInfo(state->slots[i], &slotInfo);
+		CK_RV rv = p11->C_GetSlotInfo(state->slots[i], &slotInfo);
 		if (rv != CKR_OK)
 		{
 			WLog_ERR(TAG, "unable to retrieve information for slot #%d(%d)", i, state->slots[i]);
@@ -404,6 +406,7 @@ static SECURITY_STATUS collect_keys(NCryptP11ProviderHandle* provider, P11EnumKe
 			goto cleanup_FindObjectsInit;
 		}
 
+		CK_ULONG nslotObjects = 0;
 		WINPR_ASSERT(p11->C_FindObjects);
 		rv = p11->C_FindObjects(session, &slotObjects[0], ARRAYSIZE(slotObjects), &nslotObjects);
 		if (rv != CKR_OK)
@@ -415,7 +418,7 @@ static SECURITY_STATUS collect_keys(NCryptP11ProviderHandle* provider, P11EnumKe
 		}
 
 		WLog_DBG(TAG, "slot has %d objects", nslotObjects);
-		for (j = 0; j < nslotObjects; j++)
+		for (CK_ULONG j = 0; j < nslotObjects; j++)
 		{
 			NCryptKeyEnum* key = &state->keys[state->nKeys];
 			CK_OBJECT_CLASS dataClass = CKO_PUBLIC_KEY;
@@ -463,7 +466,7 @@ static SECURITY_STATUS collect_keys(NCryptP11ProviderHandle* provider, P11EnumKe
 
 static BOOL convertKeyType(CK_KEY_TYPE k, LPWSTR dest, DWORD len, DWORD* outlen)
 {
-	DWORD retLen;
+	DWORD retLen = 0;
 	const WCHAR* r = NULL;
 
 #define ALGO_CASE(V, S) \
@@ -475,7 +478,7 @@ static BOOL convertKeyType(CK_KEY_TYPE k, LPWSTR dest, DWORD len, DWORD* outlen)
 		ALGO_CASE(CKK_RSA, BCRYPT_RSA_ALGORITHM);
 		ALGO_CASE(CKK_DSA, BCRYPT_DSA_ALGORITHM);
 		ALGO_CASE(CKK_DH, BCRYPT_DH_ALGORITHM);
-		ALGO_CASE(CKK_ECDSA, BCRYPT_ECDSA_ALGORITHM);
+		ALGO_CASE(CKK_EC, BCRYPT_ECDSA_ALGORITHM);
 		ALGO_CASE(CKK_RC2, BCRYPT_RC2_ALGORITHM);
 		ALGO_CASE(CKK_RC4, BCRYPT_RC4_ALGORITHM);
 		ALGO_CASE(CKK_DES, BCRYPT_DES_ALGORITHM);
@@ -533,20 +536,19 @@ static void wprintKeyName(LPWSTR str, CK_SLOT_ID slotId, CK_BYTE* id, CK_ULONG i
 {
 	char asciiName[128] = { 0 };
 	char* ptr = asciiName;
-	const CK_BYTE* bytePtr;
-	CK_ULONG i;
+	const CK_BYTE* bytePtr = NULL;
 
 	*ptr = '\\';
 	ptr++;
 
 	bytePtr = ((CK_BYTE*)&slotId);
-	for (i = 0; i < sizeof(slotId); i++, bytePtr++, ptr += 2)
+	for (CK_ULONG i = 0; i < sizeof(slotId); i++, bytePtr++, ptr += 2)
 		snprintf(ptr, 3, "%.2x", *bytePtr);
 
 	*ptr = '\\';
 	ptr++;
 
-	for (i = 0; i < idLen; i++, id++, ptr += 2)
+	for (CK_ULONG i = 0; i < idLen; i++, id++, ptr += 2)
 		snprintf(ptr, 3, "%.2x", *id);
 
 	ConvertUtf8NToWChar(asciiName, ARRAYSIZE(asciiName), str,
@@ -557,7 +559,7 @@ static size_t parseHex(const char* str, const char* end, CK_BYTE* target)
 {
 	int ret = 0;
 
-	for (ret = 0; str != end && *str; str++, ret++, target++)
+	for (; str != end && *str; str++, ret++, target++)
 	{
 		CK_BYTE v = 0;
 		if (*str <= '9' && *str >= '0')
@@ -608,7 +610,7 @@ static SECURITY_STATUS parseKeyName(LPCWSTR pszKeyName, CK_SLOT_ID* slotId, CK_B
                                     CK_ULONG* idLen)
 {
 	char asciiKeyName[128] = { 0 };
-	char* pos;
+	char* pos = NULL;
 
 	if (ConvertWCharToUtf8(pszKeyName, asciiKeyName, ARRAYSIZE(asciiKeyName)) < 0)
 		return NTE_BAD_KEY;
@@ -638,7 +640,6 @@ static SECURITY_STATUS NCryptP11EnumKeys(NCRYPT_PROV_HANDLE hProvider, LPCWSTR p
                                          NCryptKeyName** ppKeyName, PVOID* ppEnumState,
                                          DWORD dwFlags)
 {
-	SECURITY_STATUS ret;
 	NCryptP11ProviderHandle* provider = (NCryptP11ProviderHandle*)hProvider;
 	P11EnumKeysState* state = (P11EnumKeysState*)*ppEnumState;
 	CK_RV rv = { 0 };
@@ -648,7 +649,7 @@ static SECURITY_STATUS NCryptP11EnumKeys(NCRYPT_PROV_HANDLE hProvider, LPCWSTR p
 	char* slotFilter = NULL;
 	size_t slotFilterLen = 0;
 
-	ret = checkNCryptHandle((NCRYPT_HANDLE)hProvider, WINPR_NCRYPT_PROVIDER);
+	SECURITY_STATUS ret = checkNCryptHandle((NCRYPT_HANDLE)hProvider, WINPR_NCRYPT_PROVIDER);
 	if (ret != ERROR_SUCCESS)
 		return ret;
 
@@ -658,18 +659,27 @@ static SECURITY_STATUS NCryptP11EnumKeys(NCRYPT_PROV_HANDLE hProvider, LPCWSTR p
 		 * check whether pszScope is of the form \\.\<reader name>\ for filtering by
 		 * card reader
 		 */
-		char asciiScope[128 + 6] = { 0 };
-		size_t asciiScopeLen;
+		char asciiScope[128 + 6 + 1] = { 0 };
+		size_t asciiScopeLen = 0;
 
-		if (ConvertWCharToUtf8(pszScope, asciiScope, ARRAYSIZE(asciiScope)) < 0)
+		if (ConvertWCharToUtf8(pszScope, asciiScope, ARRAYSIZE(asciiScope) - 1) < 0)
+		{
+			WLog_WARN(TAG, "Invalid scope");
 			return NTE_INVALID_PARAMETER;
+		}
 
 		if (strstr(asciiScope, "\\\\.\\") != asciiScope)
+		{
+			WLog_WARN(TAG, "Invalid scope '%s'", asciiScope);
 			return NTE_INVALID_PARAMETER;
+		}
 
-		asciiScopeLen = strnlen(asciiScope, sizeof(asciiScope));
-		if (asciiScope[asciiScopeLen - 1] != '\\')
+		asciiScopeLen = strnlen(asciiScope, ARRAYSIZE(asciiScope));
+		if ((asciiScopeLen < 1) || (asciiScope[asciiScopeLen - 1] != '\\'))
+		{
+			WLog_WARN(TAG, "Invalid scope '%s'", asciiScope);
 			return NTE_INVALID_PARAMETER;
+		}
 
 		asciiScope[asciiScopeLen - 1] = 0;
 
@@ -689,6 +699,7 @@ static SECURITY_STATUS NCryptP11EnumKeys(NCRYPT_PROV_HANDLE hProvider, LPCWSTR p
 		if (rv != CKR_OK)
 		{
 			/* TODO: perhaps convert rv to NTE_*** errors */
+			WLog_WARN(TAG, "C_GetSlotList failed with %u", rv);
 			return NTE_FAIL;
 		}
 
@@ -700,6 +711,7 @@ static SECURITY_STATUS NCryptP11EnumKeys(NCRYPT_PROV_HANDLE hProvider, LPCWSTR p
 		{
 			free(state);
 			/* TODO: perhaps convert rv to NTE_*** errors */
+			WLog_WARN(TAG, "C_GetSlotList failed with %u", rv);
 			return NTE_FAIL;
 		}
 
@@ -722,8 +734,8 @@ static SECURITY_STATUS NCryptP11EnumKeys(NCRYPT_PROV_HANDLE hProvider, LPCWSTR p
 		CK_ATTRIBUTE certificateFilter[] = { { CKA_CLASS, &oclass, sizeof(oclass) },
 			                                 { CKA_CERTIFICATE_TYPE, &ctype, sizeof(ctype) },
 			                                 { CKA_ID, key->id, key->idLen } };
-		CK_ULONG ncertObjects;
-		CK_OBJECT_HANDLE certObject;
+		CK_ULONG ncertObjects = 0;
+		CK_OBJECT_HANDLE certObject = 0;
 
 		/* check the reader filter if any */
 		if (slotFilter && memcmp(key->slotInfo.slotDescription, slotFilter, slotFilterLen) != 0)
@@ -772,7 +784,7 @@ static SECURITY_STATUS NCryptP11EnumKeys(NCRYPT_PROV_HANDLE hProvider, LPCWSTR p
 		if (ncertObjects)
 		{
 			/* sizeof keyName struct + "\<slotId>\<certId>" + keyName->pszAlgid */
-			DWORD algoSz;
+			DWORD algoSz = 0;
 			size_t KEYNAME_SZ =
 			    (1 + (sizeof(key->slotId) * 2) /*slotId*/ + 1 + (key->idLen * 2) + 1) * 2;
 
@@ -936,11 +948,11 @@ static SECURITY_STATUS NCryptP11KeyGetProperties(NCryptP11KeyHandle* keyHandle,
                                                  DWORD cbOutput, DWORD* pcbResult, DWORD dwFlags)
 {
 	SECURITY_STATUS ret = NTE_FAIL;
-	CK_RV rv;
-	CK_SESSION_HANDLE session;
-	CK_OBJECT_HANDLE objectHandle;
-	CK_ULONG objectCount;
-	NCryptP11ProviderHandle* provider;
+	CK_RV rv = 0;
+	CK_SESSION_HANDLE session = 0;
+	CK_OBJECT_HANDLE objectHandle = 0;
+	CK_ULONG objectCount = 0;
+	NCryptP11ProviderHandle* provider = NULL;
 	CK_OBJECT_CLASS oclass = CKO_CERTIFICATE;
 	CK_CERTIFICATE_TYPE ctype = CKC_X_509;
 	CK_ATTRIBUTE certificateFilter[] = { { CKA_CLASS, &oclass, sizeof(oclass) },
@@ -1146,11 +1158,11 @@ static SECURITY_STATUS NCryptP11GetProperty(NCRYPT_HANDLE hObject, NCryptKeyGetP
 static SECURITY_STATUS NCryptP11OpenKey(NCRYPT_PROV_HANDLE hProvider, NCRYPT_KEY_HANDLE* phKey,
                                         LPCWSTR pszKeyName, DWORD dwLegacyKeySpec, DWORD dwFlags)
 {
-	SECURITY_STATUS ret;
-	CK_SLOT_ID slotId;
+	SECURITY_STATUS ret = 0;
+	CK_SLOT_ID slotId = 0;
 	CK_BYTE keyCertId[64] = { 0 };
-	CK_ULONG keyCertIdLen;
-	NCryptP11KeyHandle* keyHandle;
+	CK_ULONG keyCertIdLen = 0;
+	NCryptP11KeyHandle* keyHandle = NULL;
 
 	ret = parseKeyName(pszKeyName, &slotId, keyCertId, &keyCertIdLen);
 	if (ret != ERROR_SUCCESS)
@@ -1174,8 +1186,8 @@ static SECURITY_STATUS initialize_pkcs11(HANDLE handle,
                                          NCRYPT_PROV_HANDLE* phProvider)
 {
 	SECURITY_STATUS status = ERROR_SUCCESS;
-	NCryptP11ProviderHandle* ret;
-	CK_RV rv;
+	NCryptP11ProviderHandle* ret = NULL;
+	CK_RV rv = 0;
 
 	WINPR_ASSERT(c_get_function_list);
 	WINPR_ASSERT(phProvider);
@@ -1183,11 +1195,7 @@ static SECURITY_STATUS initialize_pkcs11(HANDLE handle,
 	ret = (NCryptP11ProviderHandle*)ncrypt_new_handle(
 	    WINPR_NCRYPT_PROVIDER, sizeof(*ret), NCryptP11GetProperty, NCryptP11StorageProvider_dtor);
 	if (!ret)
-	{
-		if (handle)
-			FreeLibrary(handle);
 		return NTE_NO_MEMORY;
-	}
 
 	ret->library = handle;
 	ret->baseProvider.enumKeysFn = NCryptP11EnumKeys;
@@ -1221,45 +1229,22 @@ SECURITY_STATUS NCryptOpenP11StorageProviderEx(NCRYPT_PROV_HANDLE* phProvider,
                                                LPCSTR* modulePaths)
 {
 	SECURITY_STATUS status = ERROR_INVALID_PARAMETER;
-#if defined(__LP64__) || (defined(__x86_64__) && !defined(__ILP32__)) || defined(_M_X64) || \
-    defined(__ia64) || defined(_M_IA64) || defined(__aarch64__) || defined(__powerpc64__)
-#define LIBS64
-#endif
-
-	LPCSTR openscPaths[] = { "opensc-pkcs11.so", /* In case winpr is installed in system paths */
-#ifdef __APPLE__
-		                     "/usr/local/lib/pkcs11/opensc-pkcs11.so",
-#else
-	/* linux and UNIXes */
-#ifdef LIBS64
-		                     "/usr/lib/x86_64-linux-gnu/pkcs11/opensc-pkcs11.so", /* Ubuntu/debian
-		                                                                           */
-		                     "/lib64/pkcs11/opensc-pkcs11.so",                    /* Fedora */
-#else
-		                     "/usr/lib/i386-linux-gnu/opensc-pkcs11.so", /* debian */
-		                     "/lib32/pkcs11/opensc-pkcs11.so",           /* Fedora */
-#endif
-#endif
-		                     NULL };
+	LPCSTR defaultPaths[] = { "p11-kit-proxy.so", "opensc-pkcs11.so", NULL };
 
 	if (!phProvider)
 		return ERROR_INVALID_PARAMETER;
 
-#if defined(WITH_OPENSC_PKCS11_LINKED)
 	if (!modulePaths)
-		return initialize_pkcs11(NULL, C_GetFunctionList, phProvider);
-#endif
-
-	if (!modulePaths)
-		modulePaths = openscPaths;
+		modulePaths = defaultPaths;
 
 	while (*modulePaths)
 	{
 		HANDLE library = LoadLibrary(*modulePaths);
 		typedef CK_RV (*c_get_function_list_t)(CK_FUNCTION_LIST_PTR_PTR);
-		c_get_function_list_t c_get_function_list;
+		c_get_function_list_t c_get_function_list = NULL;
+		NCryptP11ProviderHandle* provider = NULL;
 
-		WLog_DBG(TAG, "Trying pkcs11-helper module '%s'", *modulePaths);
+		WLog_DBG(TAG, "Trying pkcs11 module '%s'", *modulePaths);
 		if (!library)
 		{
 			status = NTE_PROV_DLL_NOT_FOUND;
@@ -1280,12 +1265,26 @@ SECURITY_STATUS NCryptOpenP11StorageProviderEx(NCRYPT_PROV_HANDLE* phProvider,
 			goto out_load_library;
 		}
 
+		provider = (NCryptP11ProviderHandle*)*phProvider;
+		provider->modulePath = _strdup(*modulePaths);
+
 		WLog_DBG(TAG, "module '%s' loaded", *modulePaths);
 		return ERROR_SUCCESS;
 
 	out_load_library:
+		if (library)
+			FreeLibrary(library);
 		modulePaths++;
 	}
 
 	return status;
+}
+
+const char* NCryptGetModulePath(NCRYPT_PROV_HANDLE phProvider)
+{
+	NCryptP11ProviderHandle* provider = (NCryptP11ProviderHandle*)phProvider;
+
+	WINPR_ASSERT(provider);
+
+	return provider->modulePath;
 }

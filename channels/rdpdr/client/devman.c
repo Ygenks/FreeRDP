@@ -53,7 +53,7 @@ static void devman_device_free(void* obj)
 
 DEVMAN* devman_new(rdpdrPlugin* rdpdr)
 {
-	DEVMAN* devman;
+	DEVMAN* devman = NULL;
 
 	if (!rdpdr)
 		return NULL;
@@ -89,12 +89,12 @@ void devman_free(DEVMAN* devman)
 
 void devman_unregister_device(DEVMAN* devman, void* key)
 {
-	DEVICE* device;
+	DEVICE* device = NULL;
 
 	if (!devman || !key)
 		return;
 
-	device = (DEVICE*)ListDictionary_Remove(devman->devices, key);
+	device = (DEVICE*)ListDictionary_Take(devman->devices, key);
 
 	if (device)
 		devman_device_free(device);
@@ -144,16 +144,15 @@ DEVICE* devman_get_device_by_id(DEVMAN* devman, UINT32 id)
 DEVICE* devman_get_device_by_type(DEVMAN* devman, UINT32 type)
 {
 	DEVICE* device = NULL;
-	ULONG_PTR* keys;
-	int count, x;
+	ULONG_PTR* keys = NULL;
 
 	if (!devman)
 		return NULL;
 
 	ListDictionary_Lock(devman->devices);
-	count = ListDictionary_GetKeys(devman->devices, &keys);
+	const size_t count = ListDictionary_GetKeys(devman->devices, &keys);
 
-	for (x = 0; x < count; x++)
+	for (size_t x = 0; x < count; x++)
 	{
 		DEVICE* cur = (DEVICE*)ListDictionary_GetItemValue(devman->devices, (void*)keys[x]);
 

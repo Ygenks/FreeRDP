@@ -21,6 +21,8 @@
 
 #include <freerdp/config.h>
 
+#include "../core/settings.h"
+
 #include <winpr/assert.h>
 #include <string.h>
 #include <errno.h>
@@ -86,14 +88,35 @@ static int tls_verify_certificate(rdpTls* tls, const rdpCertificate* cert, const
                                   UINT16 port);
 static void tls_print_certificate_name_mismatch_error(const char* hostname, UINT16 port,
                                                       const char* common_name, char** alt_names,
-                                                      int alt_names_count);
-static void tls_print_certificate_error(const char* hostname, UINT16 port, const char* fingerprint,
-                                        const char* hosts_file);
+                                                      size_t alt_names_count);
+static void tls_print_new_certificate_warn(rdpCertificateStore* store, const char* hostname,
+                                           UINT16 port, const char* fingerprint);
+static void tls_print_certificate_error(rdpCertificateStore* store, rdpCertificateData* stored_data,
+                                        const char* hostname, UINT16 port, const char* fingerprint);
+
+static void free_tls_public_key(rdpTls* tls)
+{
+	WINPR_ASSERT(tls);
+	free(tls->PublicKey);
+	tls->PublicKey = NULL;
+	tls->PublicKeyLength = 0;
+}
+
+static void free_tls_bindings(rdpTls* tls)
+{
+	WINPR_ASSERT(tls);
+
+	if (tls->Bindings)
+		free(tls->Bindings->Bindings);
+
+	free(tls->Bindings);
+	tls->Bindings = NULL;
+}
 
 static int bio_rdp_tls_write(BIO* bio, const char* buf, int size)
 {
-	int error;
-	int status;
+	int error = 0;
+	int status = 0;
 	BIO_RDP_TLS* tls = (BIO_RDP_TLS*)BIO_get_data(bio);
 
 	if (!buf || !tls)
@@ -146,8 +169,8 @@ static int bio_rdp_tls_write(BIO* bio, const char* buf, int size)
 
 static int bio_rdp_tls_read(BIO* bio, char* buf, int size)
 {
-	int error;
-	int status;
+	int error = 0;
+	int status = 0;
 	BIO_RDP_TLS* tls = (BIO_RDP_TLS*)BIO_get_data(bio);
 
 	if (!buf || !tls)
@@ -217,8 +240,8 @@ static int bio_rdp_tls_read(BIO* bio, char* buf, int size)
 
 static int bio_rdp_tls_puts(BIO* bio, const char* str)
 {
-	size_t size;
-	int status;
+	size_t size = 0;
+	int status = 0;
 
 	if (!str)
 		return 0;
@@ -236,9 +259,9 @@ static int bio_rdp_tls_gets(BIO* bio, char* str, int size)
 
 static long bio_rdp_tls_ctrl(BIO* bio, int cmd, long num, void* ptr)
 {
-	BIO* ssl_rbio;
-	BIO* ssl_wbio;
-	BIO* next_bio;
+	BIO* ssl_rbio = NULL;
+	BIO* ssl_wbio = NULL;
+	BIO* next_bio = NULL;
 	int status = -1;
 	BIO_RDP_TLS* tls = (BIO_RDP_TLS*)BIO_get_data(bio);
 
@@ -449,7 +472,7 @@ static long bio_rdp_tls_ctrl(BIO* bio, int cmd, long num, void* ptr)
 
 static int bio_rdp_tls_new(BIO* bio)
 {
-	BIO_RDP_TLS* tls;
+	BIO_RDP_TLS* tls = NULL;
 	BIO_set_flags(bio, BIO_FLAGS_SHOULD_RETRY);
 
 	if (!(tls = calloc(1, sizeof(BIO_RDP_TLS))))
@@ -462,7 +485,7 @@ static int bio_rdp_tls_new(BIO* bio)
 
 static int bio_rdp_tls_free(BIO* bio)
 {
-	BIO_RDP_TLS* tls;
+	BIO_RDP_TLS* tls = NULL;
 
 	if (!bio)
 		return 0;
@@ -494,7 +517,7 @@ static int bio_rdp_tls_free(BIO* bio)
 static long bio_rdp_tls_callback_ctrl(BIO* bio, int cmd, bio_info_cb* fp)
 {
 	long status = 0;
-	BIO_RDP_TLS* tls;
+	BIO_RDP_TLS* tls = NULL;
 
 	if (!bio)
 		return 0;
@@ -552,8 +575,8 @@ static BIO_METHOD* BIO_s_rdp_tls(void)
 
 static BIO* BIO_new_rdp_tls(SSL_CTX* ctx, int client)
 {
-	BIO* bio;
-	SSL* ssl;
+	BIO* bio = NULL;
+	SSL* ssl = NULL;
 	bio = BIO_new(BIO_s_rdp_tls());
 
 	if (!bio)
@@ -578,7 +601,7 @@ static BIO* BIO_new_rdp_tls(SSL_CTX* ctx, int client)
 
 static rdpCertificate* tls_get_certificate(rdpTls* tls, BOOL peer)
 {
-	X509* remote_cert;
+	X509* remote_cert = NULL;
 
 	if (peer)
 		remote_cert = SSL_get_peer_certificate(tls->ssl);
@@ -599,6 +622,11 @@ static rdpCertificate* tls_get_certificate(rdpTls* tls, BOOL peer)
 	return cert;
 }
 
+static const char* tls_get_server_name(rdpTls* tls)
+{
+	return tls->serverName ? tls->serverName : tls->hostname;
+}
+
 #define TLS_SERVER_END_POINT "tls-server-end-point:"
 
 static SecPkgContext_Bindings* tls_get_channel_bindings(const rdpCertificate* cert)
@@ -614,7 +642,7 @@ static SecPkgContext_Bindings* tls_get_channel_bindings(const rdpCertificate* ce
 
 	/* See https://www.rfc-editor.org/rfc/rfc5929 for details about hashes */
 	WINPR_MD_TYPE alg = freerdp_certificate_get_signature_alg(cert);
-	const char* hash;
+	const char* hash = NULL;
 	switch (alg)
 	{
 
@@ -671,7 +699,7 @@ static BOOL CALLBACK secrets_file_init_cb(PINIT_ONCE once, PVOID param, PVOID* c
 
 static void SSLCTX_keylog_cb(const SSL* ssl, const char* line)
 {
-	char* dfile;
+	char* dfile = NULL;
 
 	if (secrets_file_idx == -1)
 		return;
@@ -689,6 +717,29 @@ static void SSLCTX_keylog_cb(const SSL* ssl, const char* line)
 	}
 }
 
+static void tls_reset(rdpTls* tls)
+{
+	WINPR_ASSERT(tls);
+
+	if (tls->ctx)
+	{
+		SSL_CTX_free(tls->ctx);
+		tls->ctx = NULL;
+	}
+
+	/* tls->underlying is a stacked BIO under tls->bio.
+	 * BIO_free_all will free recursivly. */
+	if (tls->bio)
+		BIO_free_all(tls->bio);
+	else if (tls->underlying)
+		BIO_free_all(tls->underlying);
+	tls->bio = NULL;
+	tls->underlying = NULL;
+
+	free_tls_public_key(tls);
+	free_tls_bindings(tls);
+}
+
 #if OPENSSL_VERSION_NUMBER >= 0x010000000L
 static BOOL tls_prepare(rdpTls* tls, BIO* underlying, const SSL_METHOD* method, int options,
                         BOOL clientMode)
@@ -697,7 +748,12 @@ static BOOL tls_prepare(rdpTls* tls, BIO* underlying, SSL_METHOD* method, int op
                         BOOL clientMode)
 #endif
 {
-	rdpSettings* settings = tls->settings;
+	WINPR_ASSERT(tls);
+
+	rdpSettings* settings = tls->context->settings;
+	WINPR_ASSERT(settings);
+
+	tls_reset(tls);
 	tls->ctx = SSL_CTX_new(method);
 
 	tls->underlying = underlying;
@@ -779,18 +835,22 @@ const SSL_METHOD* freerdp_tls_get_ssl_method(BOOL isDtls, BOOL isClient)
 	if (isClient)
 	{
 		if (isDtls)
-			return (const SSL_METHOD*)DTLS_client_method();
+			return DTLS_client_method();
 #if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-		return (const SSL_METHOD*)SSLv23_client_method();
+		return SSLv23_client_method();
 #else
-		return (const SSL_METHOD*)TLS_client_method();
+		return TLS_client_method();
 #endif
 	}
 
 	if (isDtls)
-		return (const SSL_METHOD*)DTLS_server_method();
+		return DTLS_server_method();
 
-	return (const SSL_METHOD*)SSLv23_server_method();
+#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
+	return SSLv23_server_method();
+#else
+	return TLS_server_method();
+#endif
 }
 
 TlsHandshakeResult freerdp_tls_connect_ex(rdpTls* tls, BIO* underlying, const SSL_METHOD* methods)
@@ -832,10 +892,17 @@ TlsHandshakeResult freerdp_tls_connect_ex(rdpTls* tls, BIO* underlying, const SS
 		return 0;
 
 #if !defined(OPENSSL_NO_TLSEXT) && !defined(LIBRESSL_VERSION_NUMBER)
-	SSL_set_tlsext_host_name(tls->ssl, tls->hostname);
+	SSL_set_tlsext_host_name(tls->ssl, tls_get_server_name(tls));
 #endif
 
 	return freerdp_tls_handshake(tls);
+}
+
+static int bio_err_print(const char* str, size_t len, void* u)
+{
+	wLog* log = u;
+	WLog_Print(log, WLOG_ERROR, "[BIO_do_handshake] %s [%" PRIuz "]", str, len);
+	return 0;
 }
 
 TlsHandshakeResult freerdp_tls_handshake(rdpTls* tls)
@@ -847,12 +914,17 @@ TlsHandshakeResult freerdp_tls_handshake(rdpTls* tls)
 	if (status != 1)
 	{
 		if (!BIO_should_retry(tls->bio))
+		{
+			wLog* log = WLog_Get(TAG);
+			WLog_Print(log, WLOG_ERROR, "BIO_do_handshake failed");
+			ERR_print_errors_cb(bio_err_print, log);
 			return TLS_HANDSHAKE_ERROR;
+		}
 
 		return TLS_HANDSHAKE_CONTINUE;
 	}
 
-	int verify_status;
+	int verify_status = 0;
 	rdpCertificate* cert = tls_get_certificate(tls, tls->isClientMode);
 
 	if (!cert)
@@ -863,6 +935,7 @@ TlsHandshakeResult freerdp_tls_handshake(rdpTls* tls)
 
 	do
 	{
+		free_tls_bindings(tls);
 		tls->Bindings = tls_get_channel_bindings(cert);
 		if (!tls->Bindings)
 		{
@@ -870,6 +943,7 @@ TlsHandshakeResult freerdp_tls_handshake(rdpTls* tls)
 			break;
 		}
 
+		free_tls_public_key(tls);
 		if (!freerdp_certificate_get_public_key(cert, &tls->PublicKey, &tls->PublicKeyLength))
 		{
 			WLog_ERR(TAG,
@@ -882,7 +956,7 @@ TlsHandshakeResult freerdp_tls_handshake(rdpTls* tls)
 
 		if (tls->isClientMode)
 		{
-			verify_status = tls_verify_certificate(tls, cert, tls->hostname, tls->port);
+			verify_status = tls_verify_certificate(tls, cert, tls_get_server_name(tls), tls->port);
 
 			if (verify_status < 1)
 			{
@@ -903,8 +977,8 @@ static int pollAndHandshake(rdpTls* tls)
 
 	do
 	{
-		HANDLE event;
-		DWORD status;
+		HANDLE event = NULL;
+		DWORD status = 0;
 		if (BIO_get_event(tls->bio, &event) < 0)
 		{
 			WLog_ERR(TAG, "unable to retrieve BIO associated event");
@@ -923,6 +997,7 @@ static int pollAndHandshake(rdpTls* tls)
 			case WAIT_OBJECT_0:
 				break;
 			case WAIT_TIMEOUT:
+			case WAIT_IO_COMPLETION:
 				continue;
 			default:
 				WLog_ERR(TAG, "error during WaitForSingleObject(): 0x%08" PRIX32 "", status);
@@ -1003,7 +1078,7 @@ TlsHandshakeResult freerdp_tls_accept_ex(rdpTls* tls, BIO* underlying, rdpSettin
 	WINPR_ASSERT(tls);
 
 	long options = 0;
-	int status;
+	int status = 0;
 
 	/**
 	 * SSL_OP_NO_SSLv2:
@@ -1045,8 +1120,8 @@ TlsHandshakeResult freerdp_tls_accept_ex(rdpTls* tls, BIO* underlying, rdpSettin
 	 * Disable SSL client site renegotiation.
 	 */
 
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && OPENSSL_VERSION_NUMBER < 0x30000000L) || \
-    defined(LIBRESSL_VERSION_NUMBER)
+#if (OPENSSL_VERSION_NUMBER >= 0x10101000L) && (OPENSSL_VERSION_NUMBER < 0x30000000L) && \
+    !defined(LIBRESSL_VERSION_NUMBER)
 	options |= SSL_OP_NO_RENEGOTIATION;
 #endif
 
@@ -1154,7 +1229,7 @@ BOOL freerdp_tls_send_alert(rdpTls* tls)
 int freerdp_tls_write_all(rdpTls* tls, const BYTE* data, int length)
 {
 	WINPR_ASSERT(tls);
-	int status;
+	int status = 0;
 	int offset = 0;
 	BIO* bio = tls->bio;
 
@@ -1220,7 +1295,7 @@ static BOOL tls_match_hostname(const char* pattern, const size_t pattern_length,
 
 static BOOL is_redirected(rdpTls* tls)
 {
-	rdpSettings* settings = tls->settings;
+	rdpSettings* settings = tls->context->settings;
 
 	if (LB_NOREDIRECT & settings->RedirectionFlags)
 		return FALSE;
@@ -1230,9 +1305,9 @@ static BOOL is_redirected(rdpTls* tls)
 
 static BOOL is_accepted(rdpTls* tls, const BYTE* pem, size_t length)
 {
-	rdpSettings* settings = tls->settings;
-	char* AccpetedKey;
-	UINT32 AcceptedKeyLength;
+	rdpSettings* settings = tls->context->settings;
+	char* AccpetedKey = NULL;
+	UINT32 AcceptedKeyLength = 0;
 
 	if (tls->isGatewayTransport)
 	{
@@ -1284,8 +1359,8 @@ static BOOL is_accepted(rdpTls* tls, const BYTE* pem, size_t length)
 static BOOL compare_fingerprint(const char* fp, const char* hash, const rdpCertificate* cert,
                                 BOOL separator)
 {
-	BOOL equal;
-	char* strhash;
+	BOOL equal = 0;
+	char* strhash = NULL;
 
 	WINPR_ASSERT(fp);
 	WINPR_ASSERT(hash);
@@ -1327,7 +1402,7 @@ static BOOL is_accepted_fingerprint(const rdpCertificate* cert,
 		{
 			char* subcontext = NULL;
 			const char* h = strtok_s(cur, ":", &subcontext);
-			const char* fp;
+			const char* fp = NULL;
 
 			if (!h)
 				goto next;
@@ -1353,10 +1428,10 @@ static BOOL is_accepted_fingerprint(const rdpCertificate* cert,
 static BOOL accept_cert(rdpTls* tls, const BYTE* pem, UINT32 length)
 {
 	WINPR_ASSERT(tls);
-	size_t id = FreeRDP_AcceptedCert;
-	size_t lid = FreeRDP_AcceptedCertLength;
+	FreeRDP_Settings_Keys_String id = FreeRDP_AcceptedCert;
+	FreeRDP_Settings_Keys_UInt32 lid = FreeRDP_AcceptedCertLength;
 
-	rdpSettings* settings = tls->settings;
+	rdpSettings* settings = tls->context->settings;
 
 	if (tls->isGatewayTransport)
 	{
@@ -1369,7 +1444,7 @@ static BOOL accept_cert(rdpTls* tls, const BYTE* pem, UINT32 length)
 		lid = FreeRDP_RedirectionAcceptedCertLength;
 	}
 
-	if (!freerdp_settings_set_string_len(settings, id, pem, length))
+	if (!freerdp_settings_set_string_len(settings, id, (const char*)pem, length))
 		return FALSE;
 
 	return freerdp_settings_set_uint32(settings, lid, length);
@@ -1386,10 +1461,9 @@ static BOOL tls_extract_pem(const rdpCertificate* cert, BYTE** PublicKey, size_t
 int tls_verify_certificate(rdpTls* tls, const rdpCertificate* cert, const char* hostname,
                            UINT16 port)
 {
-	int match;
-	int index;
-	size_t length;
-	BOOL certificate_status;
+	int match = 0;
+	size_t length = 0;
+	BOOL certificate_status = 0;
 	char* common_name = NULL;
 	size_t common_name_length = 0;
 	char** dns_names = 0;
@@ -1400,12 +1474,12 @@ int tls_verify_certificate(rdpTls* tls, const rdpCertificate* cert, const char* 
 	rdpCertificateData* certificate_data = NULL;
 	BYTE* pemCert = NULL;
 	DWORD flags = VERIFY_CERT_FLAG_NONE;
-	freerdp* instance;
+	freerdp* instance = NULL;
 
 	WINPR_ASSERT(tls);
-	WINPR_ASSERT(tls->settings);
+	WINPR_ASSERT(tls->context->settings);
 
-	instance = (freerdp*)tls->settings->instance;
+	instance = (freerdp*)tls->context->settings->instance;
 	WINPR_ASSERT(instance);
 
 	if (freerdp_shall_disconnect_context(instance->context))
@@ -1421,7 +1495,7 @@ int tls_verify_certificate(rdpTls* tls, const rdpCertificate* cert, const char* 
 		goto end;
 	}
 
-	if (is_accepted_fingerprint(cert, tls->settings->CertificateAcceptedFingerprints))
+	if (is_accepted_fingerprint(cert, tls->context->settings->CertificateAcceptedFingerprints))
 	{
 		verification_status = 1;
 		goto end;
@@ -1437,7 +1511,7 @@ int tls_verify_certificate(rdpTls* tls, const rdpCertificate* cert, const char* 
 		flags |= VERIFY_CERT_FLAG_REDIRECT;
 
 	/* Certificate management is done by the application */
-	if (tls->settings->ExternalCertificateManagement)
+	if (tls->context->settings->ExternalCertificateManagement)
 	{
 		if (instance->VerifyX509Certificate)
 			verification_status =
@@ -1455,15 +1529,15 @@ int tls_verify_certificate(rdpTls* tls, const rdpCertificate* cert, const char* 
 		}
 	}
 	/* ignore certificate verification if user explicitly required it (discouraged) */
-	else if (tls->settings->IgnoreCertificate)
+	else if (tls->context->settings->IgnoreCertificate)
 		verification_status = 1; /* success! */
-	else if (!tls->isGatewayTransport && (tls->settings->AuthenticationLevel == 0))
+	else if (!tls->isGatewayTransport && (tls->context->settings->AuthenticationLevel == 0))
 		verification_status = 1; /* success! */
 	else
 	{
 		/* if user explicitly specified a certificate name, use it instead of the hostname */
-		if (!tls->isGatewayTransport && tls->settings->CertificateName)
-			hostname = tls->settings->CertificateName;
+		if (!tls->isGatewayTransport && tls->context->settings->CertificateName)
+			hostname = tls->context->settings->CertificateName;
 
 		/* attempt verification using OpenSSL and the ~/.freerdp/certs certificate store */
 		certificate_status = freerdp_certificate_verify(
@@ -1488,7 +1562,7 @@ int tls_verify_certificate(rdpTls* tls, const rdpCertificate* cert, const char* 
 
 		if (dns_names)
 		{
-			for (index = 0; index < dns_names_count; index++)
+			for (size_t index = 0; index < dns_names_count; index++)
 			{
 				if (tls_match_hostname(dns_names[index], dns_names_lengths[index], hostname))
 				{
@@ -1531,13 +1605,19 @@ int tls_verify_certificate(rdpTls* tls, const rdpCertificate* cert, const char* 
 					tls_print_certificate_name_mismatch_error(hostname, port, common_name,
 					                                          dns_names, dns_names_count);
 
+				{
+					char* efp = freerdp_certificate_get_fingerprint(cert);
+					tls_print_new_certificate_warn(tls->certificate_store, hostname, port, efp);
+					free(efp);
+				}
+
 				/* Automatically accept certificate on first use */
-				if (tls->settings->AutoAcceptCertificate)
+				if (tls->context->settings->AutoAcceptCertificate)
 				{
 					WLog_INFO(TAG, "No certificate stored, automatically accepting.");
 					accept_certificate = 1;
 				}
-				else if (tls->settings->AutoDenyCertificate)
+				else if (tls->context->settings->AutoDenyCertificate)
 				{
 					WLog_INFO(TAG, "No certificate stored, automatically denying.");
 					accept_certificate = 0;
@@ -1557,7 +1637,7 @@ int tls_verify_certificate(rdpTls* tls, const rdpCertificate* cert, const char* 
 				else if (instance->VerifyCertificateEx)
 				{
 					const BOOL use_pem = freerdp_settings_get_bool(
-					    tls->settings, FreeRDP_CertificateCallbackPreferPEM);
+					    tls->context->settings, FreeRDP_CertificateCallbackPreferPEM);
 					char* fp = NULL;
 					DWORD cflags = flags;
 					if (use_pem)
@@ -1591,14 +1671,18 @@ int tls_verify_certificate(rdpTls* tls, const rdpCertificate* cert, const char* 
 				    freerdp_certificate_store_load_data(tls->certificate_store, hostname, port);
 				/* entry was found in known_hosts file, but fingerprint does not match. ask user
 				 * to use it */
-				tls_print_certificate_error(hostname, port, pem,
-				                            freerdp_certificate_data_get_hash(stored_data));
+				{
+					char* efp = freerdp_certificate_get_fingerprint(cert);
+					tls_print_certificate_error(tls->certificate_store, stored_data, hostname, port,
+					                            efp);
+					free(efp);
+				}
 
 				if (!stored_data)
 					WLog_WARN(TAG, "Failed to get certificate entry for %s:%" PRIu16 "", hostname,
 					          port);
 
-				if (tls->settings->AutoDenyCertificate)
+				if (tls->context->settings->AutoDenyCertificate)
 				{
 					WLog_INFO(TAG, "No certificate stored, automatically denying.");
 					accept_certificate = 0;
@@ -1624,9 +1708,10 @@ int tls_verify_certificate(rdpTls* tls, const rdpCertificate* cert, const char* 
 					const char* old_fp = freerdp_certificate_data_get_fingerprint(stored_data);
 					const char* old_pem = freerdp_certificate_data_get_pem(stored_data);
 					const BOOL fpIsAllocated =
-					    !old_pem || !freerdp_settings_get_bool(
-					                    tls->settings, FreeRDP_CertificateCallbackPreferPEM);
-					char* fp;
+					    !old_pem ||
+					    !freerdp_settings_get_bool(tls->context->settings,
+					                               FreeRDP_CertificateCallbackPreferPEM);
+					char* fp = NULL;
 					if (!fpIsAllocated)
 					{
 						cflags |= VERIFY_CERT_FLAG_FP_IS_PEM;
@@ -1706,9 +1791,11 @@ end:
 	return verification_status;
 }
 
-void tls_print_certificate_error(const char* hostname, UINT16 port, const char* fingerprint,
-                                 const char* hosts_file)
+void tls_print_new_certificate_warn(rdpCertificateStore* store, const char* hostname, UINT16 port,
+                                    const char* fingerprint)
 {
+	char* path = freerdp_certificate_store_get_cert_path(store, hostname, port);
+
 	WLog_ERR(TAG, "The host key for %s:%" PRIu16 " has changed", hostname, port);
 	WLog_ERR(TAG, "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
 	WLog_ERR(TAG, "@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @");
@@ -1718,16 +1805,34 @@ void tls_print_certificate_error(const char* hostname, UINT16 port, const char* 
 	WLog_ERR(TAG, "It is also possible that a host key has just been changed.");
 	WLog_ERR(TAG, "The fingerprint for the host key sent by the remote host is %s", fingerprint);
 	WLog_ERR(TAG, "Please contact your system administrator.");
-	WLog_ERR(TAG, "Add correct host key in %s to get rid of this message.", hosts_file);
+	WLog_ERR(TAG, "Add correct host key in %s to get rid of this message.", path);
 	WLog_ERR(TAG, "Host key for %s has changed and you have requested strict checking.", hostname);
 	WLog_ERR(TAG, "Host key verification failed.");
+
+	free(path);
+}
+
+void tls_print_certificate_error(rdpCertificateStore* store, rdpCertificateData* stored_data,
+                                 const char* hostname, UINT16 port, const char* fingerprint)
+{
+	char* path = freerdp_certificate_store_get_cert_path(store, hostname, port);
+
+	WLog_ERR(TAG, "New host key for %s:%" PRIu16, hostname, port);
+	WLog_ERR(TAG, "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+	WLog_ERR(TAG, "@    WARNING: NEW HOST IDENTIFICATION!     @");
+	WLog_ERR(TAG, "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+
+	WLog_ERR(TAG, "The fingerprint for the host key sent by the remote host is %s", fingerprint);
+	WLog_ERR(TAG, "Please contact your system administrator.");
+	WLog_ERR(TAG, "Add correct host key in %s to get rid of this message.", path);
+
+	free(path);
 }
 
 void tls_print_certificate_name_mismatch_error(const char* hostname, UINT16 port,
                                                const char* common_name, char** alt_names,
-                                               int alt_names_count)
+                                               size_t alt_names_count)
 {
-	int index;
 	WINPR_ASSERT(NULL != hostname);
 	WLog_ERR(TAG, "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
 	WLog_ERR(TAG, "@           WARNING: CERTIFICATE NAME MISMATCH!           @");
@@ -1743,7 +1848,7 @@ void tls_print_certificate_name_mismatch_error(const char* hostname, UINT16 port
 		WINPR_ASSERT(NULL != alt_names);
 		WLog_ERR(TAG, "Alternative names:");
 
-		for (index = 0; index < alt_names_count; index++)
+		for (size_t index = 0; index < alt_names_count; index++)
 		{
 			WINPR_ASSERT(alt_names[index]);
 			WLog_ERR(TAG, "\t %s", alt_names[index]);
@@ -1753,19 +1858,19 @@ void tls_print_certificate_name_mismatch_error(const char* hostname, UINT16 port
 	WLog_ERR(TAG, "A valid certificate for the wrong name should NOT be trusted!");
 }
 
-rdpTls* freerdp_tls_new(rdpSettings* settings)
+rdpTls* freerdp_tls_new(rdpContext* context)
 {
-	rdpTls* tls;
+	rdpTls* tls = NULL;
 	tls = (rdpTls*)calloc(1, sizeof(rdpTls));
 
 	if (!tls)
 		return NULL;
 
-	tls->settings = settings;
+	tls->context = context;
 
-	if (!settings->ServerMode)
+	if (!freerdp_settings_get_bool(tls->context->settings, FreeRDP_ServerMode))
 	{
-		tls->certificate_store = freerdp_certificate_store_new(settings);
+		tls->certificate_store = freerdp_certificate_store_new(tls->context->settings);
 
 		if (!tls->certificate_store)
 			goto out_free;
@@ -1784,33 +1889,7 @@ void freerdp_tls_free(rdpTls* tls)
 	if (!tls)
 		return;
 
-	if (tls->ctx)
-	{
-		SSL_CTX_free(tls->ctx);
-		tls->ctx = NULL;
-	}
-
-	/* tls->underlying is a stacked BIO under tls->bio.
-	 * BIO_free_all will free recursivly. */
-	if (tls->bio)
-		BIO_free_all(tls->bio);
-	else if (tls->underlying)
-		BIO_free_all(tls->underlying);
-	tls->bio = NULL;
-	tls->underlying = NULL;
-
-	if (tls->PublicKey)
-	{
-		free(tls->PublicKey);
-		tls->PublicKey = NULL;
-	}
-
-	if (tls->Bindings)
-	{
-		free(tls->Bindings->Bindings);
-		free(tls->Bindings);
-		tls->Bindings = NULL;
-	}
+	tls_reset(tls);
 
 	if (tls->certificate_store)
 	{

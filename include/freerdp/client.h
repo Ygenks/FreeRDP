@@ -92,6 +92,19 @@ extern "C"
 		ALIGN64 UINT32 pressure;
 	} FreeRDP_TouchContact;
 
+#define FREERDP_MAX_PEN_DEVICES 10
+
+	typedef struct pen_device
+	{
+		ALIGN64 INT32 deviceid;
+		ALIGN64 UINT32 flags;
+		ALIGN64 double max_pressure;
+		ALIGN64 BOOL hovering;
+		ALIGN64 BOOL pressed;
+		ALIGN64 INT32 last_x;
+		ALIGN64 INT32 last_y;
+	} FreeRDP_PenDevice;
+
 	struct rdp_client_context
 	{
 		rdpContext context;
@@ -119,13 +132,16 @@ extern "C"
 	    UINT64 reserved3[2];
 #endif
 		ALIGN64 FreeRDP_TouchContact contacts[FREERDP_MAX_TOUCH_CONTACTS]; /**< (offset 8) */
-		UINT64 reserved[128 - 68];                                         /**< (offset 68) */
+		ALIGN64 FreeRDP_PenDevice pens[FREERDP_MAX_PEN_DEVICES];           /**< (offset 9) */
+		UINT64 reserved[128 - 9];                                          /**< (offset 9) */
 	};
 
 	/* Common client functions */
 
-	FREERDP_API rdpContext* freerdp_client_context_new(const RDP_CLIENT_ENTRY_POINTS* pEntryPoints);
 	FREERDP_API void freerdp_client_context_free(rdpContext* context);
+
+	WINPR_ATTR_MALLOC(freerdp_client_context_free, 1)
+	FREERDP_API rdpContext* freerdp_client_context_new(const RDP_CLIENT_ENTRY_POINTS* pEntryPoints);
 
 	FREERDP_API int freerdp_client_start(rdpContext* context);
 	FREERDP_API int freerdp_client_stop(rdpContext* context);
@@ -156,9 +172,13 @@ extern "C"
 
 	FREERDP_API int client_cli_logon_error_info(freerdp* instance, UINT32 data, UINT32 type);
 
-	FREERDP_API BOOL client_cli_get_aad_auth_code(freerdp* instance, const char* hostname,
-	                                              char** code, const char** client_id,
-	                                              const char** redirect_uri);
+	FREERDP_API BOOL client_cli_get_access_token(freerdp* instance, AccessTokenType tokenType,
+	                                             char** token, size_t count, ...);
+	FREERDP_API BOOL client_common_get_access_token(freerdp* instance, const char* request,
+	                                                char** token);
+
+	FREERDP_API SSIZE_T client_common_retry_dialog(freerdp* instance, const char* what,
+	                                               size_t current, void* userarg);
 
 	FREERDP_API void
 	freerdp_client_OnChannelConnectedEventHandler(void* context,
@@ -223,10 +243,40 @@ extern "C"
 	FREERDP_API BOOL freerdp_client_handle_touch(rdpClientContext* cctx, UINT32 flags, INT32 finger,
 	                                             UINT32 pressure, INT32 x, INT32 y);
 
+	typedef enum
+	{
+		FREERDP_PEN_REGISTER = 0x01,
+		FREERDP_PEN_ERASER_PRESSED = 0x02,
+		FREERDP_PEN_PRESS = 0x04,
+		FREERDP_PEN_MOTION = 0x08,
+		FREERDP_PEN_RELEASE = 0x10,
+		FREERDP_PEN_BARREL_PRESSED = 0x20,
+		FREERDP_PEN_HAS_PRESSURE = 0x40,
+		FREERDP_PEN_HAS_ROTATION = 0x80,
+		FREERDP_PEN_HAS_TILTX = 0x100,
+		FREERDP_PEN_HAS_TILTY = 0x200,
+		FREERDP_PEN_IS_INVERTED = 0x400
+	} FreeRDPPenEventType;
+
+	FREERDP_API BOOL freerdp_client_handle_pen(rdpClientContext* cctx, UINT32 flags, INT32 deviceid,
+	                                           ...);
+	FREERDP_API BOOL freerdp_client_is_pen(rdpClientContext* cctx, INT32 deviceid);
+
+	FREERDP_API BOOL freerdp_client_pen_cancel_all(rdpClientContext* cctx);
+
 	FREERDP_API BOOL freerdp_client_send_wheel_event(rdpClientContext* cctx, UINT16 mflags);
 
 	FREERDP_API BOOL freerdp_client_send_mouse_event(rdpClientContext* cctx, UINT64 mflags, INT32 x,
 	                                                 INT32 y);
+
+	/** @brief this function checks if relative mouse events are supported and enabled for this
+	 * session.
+	 *
+	 *  @param cctx The \b rdpClientContext to check
+	 *
+	 *  @return \b TRUE if relative mouse events are to be sent, \b FALSE otherwise
+	 */
+	FREERDP_API BOOL freerdp_client_use_relative_mouse_events(rdpClientContext* cctx);
 
 	FREERDP_API BOOL freerdp_client_send_button_event(rdpClientContext* cctx, BOOL relative,
 	                                                  UINT16 mflags, INT32 x, INT32 y);

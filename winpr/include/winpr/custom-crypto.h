@@ -77,14 +77,17 @@ extern "C"
 	WINPR_API WINPR_MD_TYPE winpr_md_type_from_string(const char* name);
 	WINPR_API const char* winpr_md_type_to_string(WINPR_MD_TYPE md);
 
-	WINPR_API WINPR_HMAC_CTX* winpr_HMAC_New(void);
-	WINPR_API BOOL winpr_HMAC_Init(WINPR_HMAC_CTX* ctx, WINPR_MD_TYPE md, const BYTE* key,
-	                               size_t keylen);
-	WINPR_API BOOL winpr_HMAC_Update(WINPR_HMAC_CTX* ctx, const BYTE* input, size_t ilen);
-	WINPR_API BOOL winpr_HMAC_Final(WINPR_HMAC_CTX* ctx, BYTE* output, size_t ilen);
 	WINPR_API void winpr_HMAC_Free(WINPR_HMAC_CTX* ctx);
-	WINPR_API BOOL winpr_HMAC(WINPR_MD_TYPE md, const BYTE* key, size_t keylen, const BYTE* input,
-	                          size_t ilen, BYTE* output, size_t olen);
+
+	WINPR_ATTR_MALLOC(winpr_HMAC_Free, 1)
+	WINPR_API WINPR_HMAC_CTX* winpr_HMAC_New(void);
+	WINPR_API BOOL winpr_HMAC_Init(WINPR_HMAC_CTX* ctx, WINPR_MD_TYPE md, const void* key,
+	                               size_t keylen);
+	WINPR_API BOOL winpr_HMAC_Update(WINPR_HMAC_CTX* ctx, const void* input, size_t ilen);
+	WINPR_API BOOL winpr_HMAC_Final(WINPR_HMAC_CTX* ctx, void* output, size_t ilen);
+
+	WINPR_API BOOL winpr_HMAC(WINPR_MD_TYPE md, const void* key, size_t keylen, const void* input,
+	                          size_t ilen, void* output, size_t olen);
 
 #ifdef __cplusplus
 }
@@ -101,20 +104,23 @@ extern "C"
 {
 #endif
 
+	WINPR_API void winpr_Digest_Free(WINPR_DIGEST_CTX* ctx);
+
+	WINPR_ATTR_MALLOC(winpr_Digest_Free, 1)
 	WINPR_API WINPR_DIGEST_CTX* winpr_Digest_New(void);
 	WINPR_API BOOL winpr_Digest_Init_Allow_FIPS(WINPR_DIGEST_CTX* ctx, WINPR_MD_TYPE md);
 	WINPR_API BOOL winpr_Digest_Init(WINPR_DIGEST_CTX* ctx, WINPR_MD_TYPE md);
-	WINPR_API BOOL winpr_Digest_Update(WINPR_DIGEST_CTX* ctx, const BYTE* input, size_t ilen);
-	WINPR_API BOOL winpr_Digest_Final(WINPR_DIGEST_CTX* ctx, BYTE* output, size_t ilen);
-	WINPR_API void winpr_Digest_Free(WINPR_DIGEST_CTX* ctx);
-	WINPR_API BOOL winpr_Digest_Allow_FIPS(WINPR_MD_TYPE md, const BYTE* input, size_t ilen,
-	                                       BYTE* output, size_t olen);
-	WINPR_API BOOL winpr_Digest(WINPR_MD_TYPE md, const BYTE* input, size_t ilen, BYTE* output,
+	WINPR_API BOOL winpr_Digest_Update(WINPR_DIGEST_CTX* ctx, const void* input, size_t ilen);
+	WINPR_API BOOL winpr_Digest_Final(WINPR_DIGEST_CTX* ctx, void* output, size_t ilen);
+
+	WINPR_API BOOL winpr_Digest_Allow_FIPS(WINPR_MD_TYPE md, const void* input, size_t ilen,
+	                                       void* output, size_t olen);
+	WINPR_API BOOL winpr_Digest(WINPR_MD_TYPE md, const void* input, size_t ilen, void* output,
 	                            size_t olen);
 
 	WINPR_API BOOL winpr_DigestSign_Init(WINPR_DIGEST_CTX* ctx, WINPR_MD_TYPE md, void* key);
-	WINPR_API BOOL winpr_DigestSign_Update(WINPR_DIGEST_CTX* ctx, const BYTE* input, size_t ilen);
-	WINPR_API BOOL winpr_DigestSign_Final(WINPR_DIGEST_CTX* ctx, BYTE* output, size_t* piolen);
+	WINPR_API BOOL winpr_DigestSign_Update(WINPR_DIGEST_CTX* ctx, const void* input, size_t ilen);
+	WINPR_API BOOL winpr_DigestSign_Final(WINPR_DIGEST_CTX* ctx, void* output, size_t* piolen);
 
 #ifdef __cplusplus
 }
@@ -147,11 +153,15 @@ extern "C"
 {
 #endif
 
-	WINPR_API WINPR_RC4_CTX* winpr_RC4_New_Allow_FIPS(const BYTE* key, size_t keylen);
-	WINPR_API WINPR_RC4_CTX* winpr_RC4_New(const BYTE* key, size_t keylen);
-	WINPR_API BOOL winpr_RC4_Update(WINPR_RC4_CTX* ctx, size_t length, const BYTE* input,
-	                                BYTE* output);
 	WINPR_API void winpr_RC4_Free(WINPR_RC4_CTX* ctx);
+
+	WINPR_ATTR_MALLOC(winpr_RC4_Free, 1)
+	WINPR_API WINPR_RC4_CTX* winpr_RC4_New_Allow_FIPS(const void* key, size_t keylen);
+
+	WINPR_ATTR_MALLOC(winpr_RC4_Free, 1)
+	WINPR_API WINPR_RC4_CTX* winpr_RC4_New(const void* key, size_t keylen);
+	WINPR_API BOOL winpr_RC4_Update(WINPR_RC4_CTX* ctx, size_t length, const void* input,
+	                                void* output);
 
 #ifdef __cplusplus
 }
@@ -225,12 +235,15 @@ extern "C"
 {
 #endif
 
-	WINPR_API WINPR_CIPHER_CTX* winpr_Cipher_New(int cipher, int op, const BYTE* key,
-	                                             const BYTE* iv);
-	WINPR_API BOOL winpr_Cipher_Update(WINPR_CIPHER_CTX* ctx, const BYTE* input, size_t ilen,
-	                                   BYTE* output, size_t* olen);
-	WINPR_API BOOL winpr_Cipher_Final(WINPR_CIPHER_CTX* ctx, BYTE* output, size_t* olen);
 	WINPR_API void winpr_Cipher_Free(WINPR_CIPHER_CTX* ctx);
+
+	WINPR_ATTR_MALLOC(winpr_Cipher_Free, 1)
+	WINPR_API WINPR_CIPHER_CTX* winpr_Cipher_New(int cipher, int op, const void* key,
+	                                             const void* iv);
+	WINPR_API BOOL winpr_Cipher_SetPadding(WINPR_CIPHER_CTX* ctx, BOOL enabled);
+	WINPR_API BOOL winpr_Cipher_Update(WINPR_CIPHER_CTX* ctx, const void* input, size_t ilen,
+	                                   void* output, size_t* olen);
+	WINPR_API BOOL winpr_Cipher_Final(WINPR_CIPHER_CTX* ctx, void* output, size_t* olen);
 
 #ifdef __cplusplus
 }
@@ -245,8 +258,9 @@ extern "C"
 {
 #endif
 
-	WINPR_API int winpr_Cipher_BytesToKey(int cipher, int md, const BYTE* salt, const BYTE* data,
-	                                      int datal, int count, BYTE* key, BYTE* iv);
+	WINPR_API int winpr_Cipher_BytesToKey(int cipher, WINPR_MD_TYPE md, const void* salt,
+	                                      const void* data, size_t datal, size_t count, void* key,
+	                                      void* iv);
 
 #ifdef __cplusplus
 }

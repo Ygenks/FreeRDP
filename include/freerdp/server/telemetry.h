@@ -28,7 +28,7 @@ extern "C"
 {
 #endif
 
-	typedef struct _telemetry_server_context TelemetryServerContext;
+	typedef struct s_telemetry_server_context TelemetryServerContext;
 
 	typedef UINT (*psTelemetryServerOpen)(TelemetryServerContext* context);
 	typedef UINT (*psTelemetryServerClose)(TelemetryServerContext* context);
@@ -44,7 +44,7 @@ extern "C"
 	typedef UINT (*psTelemetryServerRdpTelemetry)(TelemetryServerContext* context,
 	                                              const TELEMETRY_RDP_TELEMETRY_PDU* rdpTelemetry);
 
-	struct _telemetry_server_context
+	struct s_telemetry_server_context
 	{
 		HANDLE vcm;
 
@@ -99,8 +99,10 @@ extern "C"
 		rdpContext* rdpcontext;
 	};
 
-	FREERDP_API TelemetryServerContext* telemetry_server_context_new(HANDLE vcm);
 	FREERDP_API void telemetry_server_context_free(TelemetryServerContext* context);
+
+	WINPR_ATTR_MALLOC(telemetry_server_context_free, 1)
+	FREERDP_API TelemetryServerContext* telemetry_server_context_new(HANDLE vcm);
 
 #ifdef __cplusplus
 }

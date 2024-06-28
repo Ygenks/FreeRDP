@@ -1,5 +1,6 @@
 
 #include <stdio.h>
+#include <winpr/wtypes.h>
 #include <winpr/crt.h>
 #include <winpr/assert.h>
 #include <winpr/error.h>
@@ -14,19 +15,21 @@
 
 typedef struct
 {
-	char* utf8;
+	const char* utf8;
 	size_t utf8len;
-	WCHAR* utf16;
+	const WCHAR* utf16;
 	size_t utf16len;
 } testcase_t;
 
 // TODO: The unit tests do not check for valid code points, so always end the test
 // strings with a simple ASCII symbol for now.
 static const testcase_t unit_testcases[] = {
-	{ "foo", 3, "f\x00o\x00o\x00\x00\x00", 3 },
-	{ "foo", 4, "f\x00o\x00o\x00\x00\x00", 4 },
+	{ "foo", 3, (const WCHAR*)"f\x00o\x00o\x00\x00\x00", 3 },
+	{ "foo", 4, (const WCHAR*)"f\x00o\x00o\x00\x00\x00", 4 },
 	{ "✊🎅ęʥ꣸𑗊a", 19,
-	  "\x0a\x27\x3c\xd8\x85\xdf\x19\x01\xa5\x02\xf8\xa8\x05\xd8\xca\xdd\x61\x00\x00\x00", 9 }
+	  (const WCHAR*)"\x0a\x27\x3c\xd8\x85\xdf\x19\x01\xa5\x02\xf8\xa8\x05\xd8\xca\xdd\x61\x00\x00"
+	                "\x00",
+	  9 }
 };
 
 static void create_prefix(char* prefix, size_t prefixlen, size_t buffersize, SSIZE_T rc,
@@ -71,7 +74,7 @@ static BOOL check_short_buffer(const char* prefix, int rc, size_t buffersize,
 }
 
 #define compare_utf16(what, buffersize, rc, inputlen, test) \
-	compare_utf16_int((what), (buffersize), (rc), (inputlen), (test), __FUNCTION__, __LINE__)
+	compare_utf16_int((what), (buffersize), (rc), (inputlen), (test), __func__, __LINE__)
 static BOOL compare_utf16_int(const WCHAR* what, size_t buffersize, SSIZE_T rc, SSIZE_T inputlen,
                               const testcase_t* test, const char* fkt, size_t line)
 {
@@ -108,11 +111,14 @@ static BOOL compare_utf16_int(const WCHAR* what, size_t buffersize, SSIZE_T rc, 
 		}
 	}
 
-	if (memcmp(test->utf16, what, rc * sizeof(WCHAR)) != 0)
+	if (rc >= 0)
 	{
-		fprintf(stderr, "%s contents does not match expectations: TODO '%s' != '%s'\n", prefix,
-		        test->utf8, test->utf8);
-		return FALSE;
+		if (memcmp(test->utf16, what, rc * sizeof(WCHAR)) != 0)
+		{
+			fprintf(stderr, "%s contents does not match expectations: TODO '%s' != '%s'\n", prefix,
+			        test->utf8, test->utf8);
+			return FALSE;
+		}
 	}
 
 	printf("%s success\n", prefix);
@@ -121,7 +127,7 @@ static BOOL compare_utf16_int(const WCHAR* what, size_t buffersize, SSIZE_T rc, 
 }
 
 #define compare_utf8(what, buffersize, rc, inputlen, test) \
-	compare_utf8_int((what), (buffersize), (rc), (inputlen), (test), __FUNCTION__, __LINE__)
+	compare_utf8_int((what), (buffersize), (rc), (inputlen), (test), __func__, __LINE__)
 static BOOL compare_utf8_int(const char* what, size_t buffersize, SSIZE_T rc, SSIZE_T inputlen,
                              const testcase_t* test, const char* fkt, size_t line)
 {
@@ -158,12 +164,16 @@ static BOOL compare_utf8_int(const char* what, size_t buffersize, SSIZE_T rc, SS
 		}
 	}
 
-	if (memcmp(test->utf8, what, rc) != 0)
+	if (rc >= 0)
 	{
-		fprintf(stderr, "%s contents does not match expectations: '%s' != '%s'\n", prefix, what,
-		        test->utf8);
-		return FALSE;
+		if (memcmp(test->utf8, what, rc) != 0)
+		{
+			fprintf(stderr, "%s contents does not match expectations: '%s' != '%s'\n", prefix, what,
+			        test->utf8);
+			return FALSE;
+		}
 	}
+
 	printf("%s success\n", prefix);
 
 	return TRUE;
@@ -180,7 +190,7 @@ static BOOL test_convert_to_utf16(const testcase_t* test)
 	if ((rc2 < 0) || ((size_t)rc2 != wlen))
 	{
 		char prefix[8192] = { 0 };
-		create_prefix(prefix, ARRAYSIZE(prefix), 0, rc2, -1, test, __FUNCTION__, __LINE__);
+		create_prefix(prefix, ARRAYSIZE(prefix), 0, rc2, -1, test, __func__, __LINE__);
 		fprintf(stderr, "%s ConvertUtf8ToWChar(%s, NULL, 0) expected %" PRIuz ", got %" PRIdz "\n",
 		        prefix, test->utf8, wlen, rc2);
 		return FALSE;
@@ -207,8 +217,7 @@ static BOOL test_convert_to_utf16_n(const testcase_t* test)
 	if ((rc2 < 0) || ((size_t)rc2 != wlen))
 	{
 		char prefix[8192] = { 0 };
-		create_prefix(prefix, ARRAYSIZE(prefix), 0, rc2, test->utf8len, test, __FUNCTION__,
-		              __LINE__);
+		create_prefix(prefix, ARRAYSIZE(prefix), 0, rc2, test->utf8len, test, __func__, __LINE__);
 		fprintf(stderr,
 		        "%s ConvertUtf8NToWChar(%s, %" PRIuz ", NULL, 0) expected %" PRIuz ", got %" PRIdz
 		        "\n",
@@ -244,7 +253,7 @@ static BOOL test_convert_to_utf8(const testcase_t* test)
 	if ((rc2 < 0) || ((size_t)rc2 != wlen))
 	{
 		char prefix[8192] = { 0 };
-		create_prefix(prefix, ARRAYSIZE(prefix), 0, rc2, -1, test, __FUNCTION__, __LINE__);
+		create_prefix(prefix, ARRAYSIZE(prefix), 0, rc2, -1, test, __func__, __LINE__);
 		fprintf(stderr, "%s ConvertWCharToUtf8(%s, NULL, 0) expected %" PRIuz ", got %" PRIdz "\n",
 		        prefix, test->utf8, wlen, rc2);
 		return FALSE;
@@ -272,8 +281,7 @@ static BOOL test_convert_to_utf8_n(const testcase_t* test)
 	if ((rc2 < 0) || ((size_t)rc2 != wlen))
 	{
 		char prefix[8192] = { 0 };
-		create_prefix(prefix, ARRAYSIZE(prefix), 0, rc2, test->utf16len, test, __FUNCTION__,
-		              __LINE__);
+		create_prefix(prefix, ARRAYSIZE(prefix), 0, rc2, test->utf16len, test, __func__, __LINE__);
 		fprintf(stderr,
 		        "%s ConvertWCharNToUtf8(%s, %" PRIuz ", NULL, 0) expected %" PRIuz ", got %" PRIdz
 		        "\n",
@@ -322,7 +330,7 @@ static BOOL test_conversion(const testcase_t* testcases, size_t count)
 #if defined(WITH_WINPR_DEPRECATED)
 
 #define compare_win_utf16(what, buffersize, rc, inputlen, test) \
-	compare_win_utf16_int((what), (buffersize), (rc), (inputlen), (test), __FUNCTION__, __LINE__)
+	compare_win_utf16_int((what), (buffersize), (rc), (inputlen), (test), __func__, __LINE__)
 static BOOL compare_win_utf16_int(const WCHAR* what, size_t buffersize, int rc, int inputlen,
                                   const testcase_t* test, const char* fkt, size_t line)
 {
@@ -392,7 +400,7 @@ static BOOL compare_win_utf16_int(const WCHAR* what, size_t buffersize, int rc, 
 }
 
 #define compare_win_utf8(what, buffersize, rc, inputlen, test) \
-	compare_win_utf8_int((what), (buffersize), (rc), (inputlen), (test), __FUNCTION__, __LINE__)
+	compare_win_utf8_int((what), (buffersize), (rc), (inputlen), (test), __func__, __LINE__)
 static BOOL compare_win_utf8_int(const char* what, size_t buffersize, SSIZE_T rc, SSIZE_T inputlen,
                                  const testcase_t* test, const char* fkt, size_t line)
 {
@@ -470,7 +478,7 @@ static BOOL test_win_convert_to_utf16(const testcase_t* test)
 	if (rc2 != wlen + 1)
 	{
 		char prefix[8192] = { 0 };
-		create_prefix(prefix, ARRAYSIZE(prefix), 0, rc2, -1, test, __FUNCTION__, __LINE__);
+		create_prefix(prefix, ARRAYSIZE(prefix), 0, rc2, -1, test, __func__, __LINE__);
 		fprintf(stderr,
 		        "%s MultiByteToWideChar(CP_UTF8, 0, %s, [-1], NULL, 0) expected %" PRIuz
 		        ", got %d\n",
@@ -503,8 +511,7 @@ static BOOL test_win_convert_to_utf16_n(const testcase_t* test)
 	if (rc2 != wlen)
 	{
 		char prefix[8192] = { 0 };
-		create_prefix(prefix, ARRAYSIZE(prefix), 0, rc2, test->utf8len, test, __FUNCTION__,
-		              __LINE__);
+		create_prefix(prefix, ARRAYSIZE(prefix), 0, rc2, test->utf8len, test, __func__, __LINE__);
 		fprintf(stderr,
 		        "%s MultiByteToWideChar(CP_UTF8, 0, %s, %" PRIuz ", NULL, 0) expected %" PRIuz
 		        ", got %d\n",
@@ -544,7 +551,7 @@ static BOOL test_win_convert_to_utf8(const testcase_t* test)
 	if (rc2 != wlen)
 	{
 		char prefix[8192] = { 0 };
-		create_prefix(prefix, ARRAYSIZE(prefix), 0, rc2, -1, test, __FUNCTION__, __LINE__);
+		create_prefix(prefix, ARRAYSIZE(prefix), 0, rc2, -1, test, __func__, __LINE__);
 		fprintf(stderr,
 		        "%s WideCharToMultiByte(CP_UTF8, 0, %s, -1, NULL, 0, NULL, NULL) expected %" PRIuz
 		        ", got %d\n",
@@ -579,8 +586,7 @@ static BOOL test_win_convert_to_utf8_n(const testcase_t* test)
 	if (rc2 != wlen)
 	{
 		char prefix[8192] = { 0 };
-		create_prefix(prefix, ARRAYSIZE(prefix), 0, rc2, test->utf16len, test, __FUNCTION__,
-		              __LINE__);
+		create_prefix(prefix, ARRAYSIZE(prefix), 0, rc2, test->utf16len, test, __func__, __LINE__);
 		fprintf(stderr,
 		        "%s WideCharToMultiByte(CP_UTF8, 0, %s, %" PRIuz
 		        ", NULL, 0, NULL, NULL) expected %" PRIuz ", got %d\n",
@@ -742,9 +748,9 @@ static int convert_utf8_to_utf16(BYTE* lpMultiByteStr, BYTE* expected_lpWideChar
                                  int expected_cchWideChar)
 {
 	int rc = -1;
-	int length;
-	size_t cbMultiByte;
-	int cchWideChar;
+	int length = 0;
+	size_t cbMultiByte = 0;
+	int cchWideChar = 0;
 	LPWSTR lpWideCharStr = NULL;
 
 	cbMultiByte = strlen((char*)lpMultiByteStr);
@@ -822,9 +828,9 @@ static int convert_utf16_to_utf8(BYTE* lpWideCharStr, BYTE* expected_lpMultiByte
                                  int expected_cbMultiByte)
 {
 	int rc = -1;
-	int length;
-	int cchWideChar;
-	int cbMultiByte;
+	int length = 0;
+	int cchWideChar = 0;
+	int cbMultiByte = 0;
 	LPSTR lpMultiByteStr = NULL;
 
 	cchWideChar = _wcslen((WCHAR*)lpWideCharStr);
@@ -901,9 +907,9 @@ fail:
 static BOOL test_unicode_uppercasing(BYTE* lower, BYTE* upper)
 {
 	WCHAR* lowerW = NULL;
-	int lowerLength;
+	int lowerLength = 0;
 	WCHAR* upperW = NULL;
-	int upperLength;
+	int upperLength = 0;
 
 	lowerLength = ConvertToUnicode(CP_UTF8, 0, (LPSTR)lower, -1, &lowerW, 0);
 	upperLength = ConvertToUnicode(CP_UTF8, 0, (LPSTR)upper, -1, &upperW, 0);
@@ -941,7 +947,7 @@ static BOOL test_ConvertFromUnicode_wrapper(void)
 	const CHAR cmp0[] = { 'R', 'I', 'C', 'H', ' ', 'T', 'E', 'X', 'T',
 		                  ' ', 'F', 'O', 'R', 'M', 'A', 'T', 0 };
 	CHAR* dst = NULL;
-	int i;
+	int i = 0;
 
 	/* Test unterminated unicode string:
 	 * ConvertFromUnicode must always null-terminate, even if the src string isn't
@@ -1030,8 +1036,8 @@ static BOOL test_ConvertToUnicode_wrapper(void)
 	const BYTE cmp0[] = "\x52\x00\x49\x00\x43\x00\x48\x00\x20\x00\x54\x00\x45\x00\x58\x00\x54\x00"
 	                    "\x20\x00\x46\x00\x4f\x00\x52\x00\x4d\x00\x41\x00\x54\x00\x00\x00";
 	WCHAR* dst = NULL;
-	int ii;
-	size_t i;
+	int ii = 0;
+	size_t i = 0;
 
 	/* Test static string buffers of differing sizes */
 	{

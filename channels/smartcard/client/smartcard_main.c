@@ -37,7 +37,7 @@
 
 #include "smartcard_main.h"
 
-#define CAST_FROM_DEVICE(device) cast_device_from(device, __FUNCTION__, __FILE__, __LINE__)
+#define CAST_FROM_DEVICE(device) cast_device_from(device, __func__, __FILE__, __LINE__)
 
 typedef struct
 {
@@ -75,15 +75,15 @@ static SMARTCARD_DEVICE* cast_device_from(DEVICE* device, const char* fkt, const
 static DWORD WINAPI smartcard_context_thread(LPVOID arg)
 {
 	SMARTCARD_CONTEXT* pContext = (SMARTCARD_CONTEXT*)arg;
-	DWORD nCount;
+	DWORD nCount = 0;
 	LONG status = 0;
-	DWORD waitStatus;
-	HANDLE hEvents[2];
-	wMessage message;
-	SMARTCARD_DEVICE* smartcard;
+	DWORD waitStatus = 0;
+	HANDLE hEvents[2] = { 0 };
+	wMessage message = { 0 };
+	SMARTCARD_DEVICE* smartcard = NULL;
 	UINT error = CHANNEL_RC_OK;
 	smartcard = pContext->smartcard;
-	nCount = 0;
+
 	hEvents[nCount++] = MessageQueue_Event(pContext->IrpQueue);
 
 	while (1)
@@ -108,7 +108,7 @@ static DWORD WINAPI smartcard_context_thread(LPVOID arg)
 
 		if (waitStatus == WAIT_OBJECT_0)
 		{
-			scard_irp_queue_element* element;
+			scard_irp_queue_element* element = NULL;
 
 			if (!MessageQueue_Peek(pContext->IrpQueue, &message, TRUE))
 			{
@@ -178,7 +178,7 @@ static void smartcard_operation_queue_free(void* obj)
 
 static void* smartcard_context_new(void* smartcard, SCARDCONTEXT hContext)
 {
-	SMARTCARD_CONTEXT* pContext;
+	SMARTCARD_CONTEXT* pContext = NULL;
 	pContext = (SMARTCARD_CONTEXT*)calloc(1, sizeof(SMARTCARD_CONTEXT));
 
 	if (!pContext)
@@ -329,14 +329,12 @@ static UINT smartcard_init(DEVICE* device)
  */
 UINT smartcard_complete_irp(SMARTCARD_DEVICE* smartcard, IRP* irp, BOOL* handled)
 {
-	void* key;
-
 	WINPR_ASSERT(smartcard);
 	WINPR_ASSERT(irp);
 	WINPR_ASSERT(handled);
 
-	key = (void*)(size_t)irp->CompletionId;
-	ListDictionary_Remove(smartcard->rgOutstandingMessages, key);
+	uintptr_t key = (uintptr_t)irp->CompletionId + 1;
+	ListDictionary_Remove(smartcard->rgOutstandingMessages, (void*)key);
 
 	WINPR_ASSERT(irp->Complete);
 	*handled = TRUE;
@@ -355,8 +353,7 @@ UINT smartcard_complete_irp(SMARTCARD_DEVICE* smartcard, IRP* irp, BOOL* handled
  */
 static UINT smartcard_process_irp(SMARTCARD_DEVICE* smartcard, IRP* irp, BOOL* handled)
 {
-	void* key;
-	LONG status;
+	LONG status = 0;
 	BOOL asyncIrp = FALSE;
 	SMARTCARD_CONTEXT* pContext = NULL;
 
@@ -365,9 +362,9 @@ static UINT smartcard_process_irp(SMARTCARD_DEVICE* smartcard, IRP* irp, BOOL* h
 	WINPR_ASSERT(irp);
 	WINPR_ASSERT(irp->Complete);
 
-	key = (void*)(size_t)irp->CompletionId;
+	uintptr_t key = (uintptr_t)irp->CompletionId + 1;
 
-	if (!ListDictionary_Add(smartcard->rgOutstandingMessages, key, irp))
+	if (!ListDictionary_Add(smartcard->rgOutstandingMessages, (void*)key, irp))
 	{
 		WLog_ERR(TAG, "ListDictionary_Add failed!");
 		return ERROR_INTERNAL_ERROR;
@@ -387,7 +384,7 @@ static UINT smartcard_process_irp(SMARTCARD_DEVICE* smartcard, IRP* irp, BOOL* h
 
 		if (status != SCARD_S_SUCCESS)
 		{
-			UINT error;
+			UINT error = 0;
 
 			smartcard_operation_free(&element->operation, TRUE);
 			irp->IoStatus = (UINT32)STATUS_UNSUCCESSFUL;
@@ -467,7 +464,7 @@ static UINT smartcard_process_irp(SMARTCARD_DEVICE* smartcard, IRP* irp, BOOL* h
 
 		if (!asyncIrp)
 		{
-			UINT error;
+			UINT error = 0;
 
 			status =
 			    smartcard_irp_device_control_call(smartcard->callctx, element->irp->output,
@@ -503,7 +500,7 @@ static UINT smartcard_process_irp(SMARTCARD_DEVICE* smartcard, IRP* irp, BOOL* h
 	}
 	else
 	{
-		UINT ustatus;
+		UINT ustatus = 0;
 		WLog_ERR(TAG, "Unexpected SmartCard IRP: MajorFunction %s, MinorFunction: 0x%08" PRIX32 "",
 		         rdpdr_irp_string(irp->MajorFunction), irp->MinorFunction);
 		irp->IoStatus = (UINT32)STATUS_NOT_SUPPORTED;
@@ -520,18 +517,17 @@ static UINT smartcard_process_irp(SMARTCARD_DEVICE* smartcard, IRP* irp, BOOL* h
 
 static DWORD WINAPI smartcard_thread_func(LPVOID arg)
 {
-	IRP* irp;
-	DWORD nCount;
-	DWORD status;
-	HANDLE hEvents[1];
-	wMessage message;
+	IRP* irp = NULL;
+	DWORD nCount = 0;
+	DWORD status = 0;
+	HANDLE hEvents[1] = { 0 };
+	wMessage message = { 0 };
 	UINT error = CHANNEL_RC_OK;
 	SMARTCARD_DEVICE* smartcard = CAST_FROM_DEVICE(arg);
 
 	if (!smartcard)
 		return ERROR_INVALID_PARAMETER;
 
-	nCount = 0;
 	hEvents[nCount++] = MessageQueue_Event(smartcard->IrpQueue);
 
 	while (1)
@@ -633,7 +629,7 @@ extern UINT DeviceServiceEntry(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints);
 UINT DeviceServiceEntry(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints)
 {
 	SMARTCARD_DEVICE* smartcard = NULL;
-	size_t length;
+	size_t length = 0;
 	UINT error = CHANNEL_RC_NO_MEMORY;
 
 	if (!sSmartcard)

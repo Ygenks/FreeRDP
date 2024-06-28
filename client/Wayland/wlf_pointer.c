@@ -70,10 +70,13 @@ static BOOL wlf_Pointer_Set(rdpContext* context, rdpPointer* pointer)
 {
 	wlfContext* wlf = (wlfContext*)context;
 	wlfPointer* ptr = (wlfPointer*)pointer;
-	void* data;
-	UINT32 w, h, x, y;
-	size_t size;
-	UwacReturnCode rc;
+	void* data = NULL;
+	UINT32 w = 0;
+	UINT32 h = 0;
+	UINT32 x = 0;
+	UINT32 y = 0;
+	size_t size = 0;
+	UwacReturnCode rc = UWAC_ERROR_INTERNAL;
 	BOOL res = FALSE;
 	RECTANGLE_16 area;
 
@@ -101,7 +104,8 @@ static BOOL wlf_Pointer_Set(rdpContext* context, rdpPointer* pointer)
 	area.bottom = (UINT16)pointer->height;
 
 	if (!wlf_copy_image(ptr->data, pointer->width * 4, pointer->width, pointer->height, data, w * 4,
-	                    w, h, &area, context->settings->SmartSizing))
+	                    w, h, &area,
+	                    freerdp_settings_get_bool(context->settings, FreeRDP_SmartSizing)))
 		goto fail;
 
 	rc = UwacSeatSetMouseCursor(wlf->seat, data, size, w, h, x, y);
@@ -149,19 +153,15 @@ static BOOL wlf_Pointer_SetPosition(rdpContext* context, UINT32 x, UINT32 y)
 
 BOOL wlf_register_pointer(rdpGraphics* graphics)
 {
-	rdpPointer* pointer = NULL;
+	rdpPointer pointer = { 0 };
 
-	if (!(pointer = (rdpPointer*)calloc(1, sizeof(rdpPointer))))
-		return FALSE;
-
-	pointer->size = sizeof(wlfPointer);
-	pointer->New = wlf_Pointer_New;
-	pointer->Free = wlf_Pointer_Free;
-	pointer->Set = wlf_Pointer_Set;
-	pointer->SetNull = wlf_Pointer_SetNull;
-	pointer->SetDefault = wlf_Pointer_SetDefault;
-	pointer->SetPosition = wlf_Pointer_SetPosition;
-	graphics_register_pointer(graphics, pointer);
-	free(pointer);
+	pointer.size = sizeof(wlfPointer);
+	pointer.New = wlf_Pointer_New;
+	pointer.Free = wlf_Pointer_Free;
+	pointer.Set = wlf_Pointer_Set;
+	pointer.SetNull = wlf_Pointer_SetNull;
+	pointer.SetDefault = wlf_Pointer_SetDefault;
+	pointer.SetPosition = wlf_Pointer_SetPosition;
+	graphics_register_pointer(graphics, &pointer);
 	return TRUE;
 }

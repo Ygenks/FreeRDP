@@ -41,27 +41,34 @@
 #include "../log.h"
 #define TAG WINPR_TAG("unicode")
 
+#define UCNV_CONVERT 1
+
 int int_MultiByteToWideChar(UINT CodePage, DWORD dwFlags, LPCSTR lpMultiByteStr, int cbMultiByte,
                             LPWSTR lpWideCharStr, int cchWideChar)
 {
 	const BOOL isNullTerminated = cbMultiByte < 0;
-	LPWSTR targetStart;
 
 	WINPR_UNUSED(dwFlags);
 
 	/* If cbMultiByte is 0, the function fails */
 
 	if ((cbMultiByte == 0) || (cbMultiByte < -1))
+	{
+		SetLastError(ERROR_INVALID_PARAMETER);
 		return 0;
+	}
 
-	size_t len;
+	size_t len = 0;
 	if (isNullTerminated)
 		len = strlen(lpMultiByteStr) + 1;
 	else
 		len = cbMultiByte;
 
 	if (len >= INT_MAX)
-		return -1;
+	{
+		SetLastError(ERROR_INVALID_PARAMETER);
+		return 0;
+	}
 	cbMultiByte = (int)len;
 
 	/*
@@ -69,9 +76,8 @@ int int_MultiByteToWideChar(UINT CodePage, DWORD dwFlags, LPCSTR lpMultiByteStr,
 	 * in characters for lpWideCharStr and makes no use of the output parameter itself.
 	 */
 	{
-		UErrorCode error;
-		int32_t targetLength;
-		int32_t targetCapacity;
+		UErrorCode error = U_ZERO_ERROR;
+		int32_t targetLength = -1;
 
 		switch (CodePage)
 		{
@@ -81,15 +87,23 @@ int int_MultiByteToWideChar(UINT CodePage, DWORD dwFlags, LPCSTR lpMultiByteStr,
 
 			default:
 				WLog_ERR(TAG, "Unsupported encoding %u", CodePage);
+				SetLastError(ERROR_INVALID_PARAMETER);
 				return 0;
 		}
 
-		targetStart = lpWideCharStr;
-		targetCapacity = cchWideChar;
-		error = U_ZERO_ERROR;
-
+		const int32_t targetCapacity = cchWideChar;
+#if defined(UCNV_CONVERT)
+		char* targetStart = (char*)lpWideCharStr;
+		targetLength =
+		    ucnv_convert("UTF-16LE", "UTF-8", targetStart, targetCapacity * (int32_t)sizeof(WCHAR),
+		                 lpMultiByteStr, cbMultiByte, &error);
+		if (targetLength > 0)
+			targetLength /= sizeof(WCHAR);
+#else
+		WCHAR* targetStart = lpWideCharStr;
 		u_strFromUTF8(targetStart, targetCapacity, &targetLength, lpMultiByteStr, cbMultiByte,
 		              &error);
+#endif
 
 		switch (error)
 		{
@@ -133,23 +147,27 @@ int int_WideCharToMultiByte(UINT CodePage, DWORD dwFlags, LPCWSTR lpWideCharStr,
                             LPSTR lpMultiByteStr, int cbMultiByte, LPCSTR lpDefaultChar,
                             LPBOOL lpUsedDefaultChar)
 {
-	char* targetStart;
-
 	/* If cchWideChar is 0, the function fails */
 
 	if ((cchWideChar == 0) || (cchWideChar < -1))
+	{
+		SetLastError(ERROR_INVALID_PARAMETER);
 		return 0;
+	}
 
 	/* If cchWideChar is -1, the string is null-terminated */
 
-	size_t len;
+	size_t len = 0;
 	if (cchWideChar == -1)
 		len = _wcslen(lpWideCharStr) + 1;
 	else
 		len = cchWideChar;
 
 	if (len >= INT32_MAX)
+	{
+		SetLastError(ERROR_INVALID_PARAMETER);
 		return 0;
+	}
 	cchWideChar = (int)len;
 
 	/*
@@ -157,9 +175,8 @@ int int_WideCharToMultiByte(UINT CodePage, DWORD dwFlags, LPCWSTR lpWideCharStr,
 	 * in bytes for lpMultiByteStr and makes no use of the output parameter itself.
 	 */
 	{
-		UErrorCode error;
-		int32_t targetLength;
-		int32_t targetCapacity;
+		UErrorCode error = U_ZERO_ERROR;
+		int32_t targetLength = -1;
 
 		switch (CodePage)
 		{
@@ -169,14 +186,19 @@ int int_WideCharToMultiByte(UINT CodePage, DWORD dwFlags, LPCWSTR lpWideCharStr,
 
 			default:
 				WLog_ERR(TAG, "Unsupported encoding %u", CodePage);
+				SetLastError(ERROR_INVALID_PARAMETER);
 				return 0;
 		}
 
-		targetStart = lpMultiByteStr;
-		targetCapacity = cbMultiByte;
-		error = U_ZERO_ERROR;
-
+		char* targetStart = lpMultiByteStr;
+		const int32_t targetCapacity = cbMultiByte;
+#if defined(UCNV_CONVERT)
+		const char* str = (const char*)lpWideCharStr;
+		targetLength = ucnv_convert("UTF-8", "UTF-16LE", targetStart, targetCapacity, str,
+		                            cchWideChar * (int32_t)sizeof(WCHAR), &error);
+#else
 		u_strToUTF8(targetStart, targetCapacity, &targetLength, lpWideCharStr, cchWideChar, &error);
+#endif
 		switch (error)
 		{
 			case U_BUFFER_OVERFLOW_ERROR:

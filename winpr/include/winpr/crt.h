@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <winpr/platform.h>
 #include <winpr/winpr.h>
 
 #include <winpr/spec.h>
@@ -104,7 +105,13 @@ static INLINE UINT64 _byteswap_uint64(UINT64 _val)
 
 static INLINE UINT16 _byteswap_ushort(UINT16 _val)
 {
-	return (UINT16)(((_val) >> 8U) | ((_val) << 8U));
+#ifdef __cplusplus
+#define winpr_byteswap_cast(t, val) static_cast<t>(val)
+#else
+#define winpr_byteswap_cast(t, val) (t)(val)
+#endif
+	return winpr_byteswap_cast(UINT16, ((_val) >> 8U) | ((_val) << 8U));
+#undef winpr_byteswap_cast
 }
 
 #endif /* (__GNUC__ > 4) || ... */
@@ -129,19 +136,15 @@ extern "C"
 
 /* Data Alignment */
 
-#if defined(__clang__)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wreserved-id-macro"
-#endif
+WINPR_PRAGMA_DIAG_PUSH
+WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 
 #ifndef _ERRNO_T_DEFINED
 #define _ERRNO_T_DEFINED
 typedef int errno_t;
 #endif /* _ERRNO_T_DEFINED */
 
-#if defined(__clang__)
-#pragma clang diagnostic pop
-#endif
+WINPR_PRAGMA_DIAG_POP
 
 #ifndef _WIN32
 
@@ -187,26 +190,33 @@ extern "C"
 {
 #endif
 
+	WINPR_API void winpr_aligned_free(void* memblock);
+
+	WINPR_ATTR_MALLOC(winpr_aligned_free, 1)
 	WINPR_API void* winpr_aligned_malloc(size_t size, size_t alignment);
 
+	WINPR_ATTR_MALLOC(winpr_aligned_free, 1)
 	WINPR_API void* winpr_aligned_calloc(size_t count, size_t size, size_t alignment);
 
+	WINPR_ATTR_MALLOC(winpr_aligned_free, 1)
 	WINPR_API void* winpr_aligned_realloc(void* memblock, size_t size, size_t alignment);
 
+	WINPR_ATTR_MALLOC(winpr_aligned_free, 1)
 	WINPR_API void* winpr_aligned_recalloc(void* memblock, size_t num, size_t size,
 	                                       size_t alignment);
 
+	WINPR_ATTR_MALLOC(winpr_aligned_free, 1)
 	WINPR_API void* winpr_aligned_offset_malloc(size_t size, size_t alignment, size_t offset);
 
+	WINPR_ATTR_MALLOC(winpr_aligned_free, 1)
 	WINPR_API void* winpr_aligned_offset_realloc(void* memblock, size_t size, size_t alignment,
 	                                             size_t offset);
 
+	WINPR_ATTR_MALLOC(winpr_aligned_free, 1)
 	WINPR_API void* winpr_aligned_offset_recalloc(void* memblock, size_t num, size_t size,
 	                                              size_t alignment, size_t offset);
 
 	WINPR_API size_t winpr_aligned_msize(void* memblock, size_t alignment, size_t offset);
-
-	WINPR_API void winpr_aligned_free(void* memblock);
 
 #ifdef __cplusplus
 }

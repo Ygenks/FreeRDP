@@ -28,7 +28,7 @@ extern "C"
 {
 #endif
 
-	typedef struct _cam_dev_enum_server_context CamDevEnumServerContext;
+	typedef struct s_cam_dev_enum_server_context CamDevEnumServerContext;
 
 	typedef UINT (*psCamDevEnumServerServerOpen)(CamDevEnumServerContext* context);
 	typedef UINT (*psCamDevEnumServerServerClose)(CamDevEnumServerContext* context);
@@ -54,7 +54,7 @@ extern "C"
 	    CamDevEnumServerContext* context,
 	    const CAM_DEVICE_REMOVED_NOTIFICATION* deviceRemovedNotification);
 
-	struct _cam_dev_enum_server_context
+	struct s_cam_dev_enum_server_context
 	{
 		HANDLE vcm;
 
@@ -125,8 +125,10 @@ extern "C"
 		rdpContext* rdpcontext;
 	};
 
-	FREERDP_API CamDevEnumServerContext* cam_dev_enum_server_context_new(HANDLE vcm);
 	FREERDP_API void cam_dev_enum_server_context_free(CamDevEnumServerContext* context);
+
+	WINPR_ATTR_MALLOC(cam_dev_enum_server_context_free, 1)
+	FREERDP_API CamDevEnumServerContext* cam_dev_enum_server_context_new(HANDLE vcm);
 
 #ifdef __cplusplus
 }

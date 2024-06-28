@@ -1,8 +1,8 @@
 #!/bin/bash
 
 SCM_URL=https://github.com/FFmpeg/FFmpeg/archive
-SCM_TAG=n4.4.1
-SCM_HASH=82b43cc67296bcd01a59ae6b327cdb50121d3a9e35f41a30de1edd71bb4a6666
+SCM_TAG=n6.0
+SCM_HASH=9a1fa94608300e835bf89bdfcd7d77deceba67bff3494f609816f84bd69a459e
 
 OLD_PATH=$PATH
 
@@ -125,6 +125,7 @@ function build {
         --enable-pic \
         --enable-jni --enable-mediacodec \
         --enable-shared \
+        --disable-vulkan \
         --disable-stripping \
         --disable-programs --disable-doc --disable-avdevice --disable-avfilter --disable-avformat
 
@@ -135,7 +136,6 @@ function build {
 
 # Run the main program.
 common_parse_arguments $@
-common_check_requirements
 common_update $SCM_URL $SCM_TAG $BUILD_SRC $SCM_HASH
 
 HOST_PKG_CONFIG_PATH=`command -v pkg-config`

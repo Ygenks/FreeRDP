@@ -27,8 +27,11 @@
 #include <wchar.h>
 
 #include <winpr/crt.h>
-#include <winpr/assert.h>
 #include <winpr/endian.h>
+
+#if defined(WITH_URIPARSER)
+#include <uriparser/Uri.h>
+#endif
 
 /* String Manipulation (CRT): http://msdn.microsoft.com/en-us/library/f0151s4x.aspx */
 
@@ -39,6 +42,37 @@
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #endif
 
+#if defined(WITH_URIPARSER)
+char* winpr_str_url_decode(const char* str, size_t len)
+{
+	char* dst = strndup(str, len);
+	if (!dst)
+		return NULL;
+
+	if (!uriUnescapeInPlaceExA(dst, URI_FALSE, URI_FALSE))
+	{
+		free(dst);
+		return NULL;
+	}
+
+	return dst;
+}
+
+char* winpr_str_url_encode(const char* str, size_t len)
+{
+	char* dst = calloc(len + 1, sizeof(char) * 3);
+	if (!dst)
+		return NULL;
+
+	if (!uriEscapeA(str, dst, URI_FALSE, URI_FALSE))
+	{
+		free(dst);
+		return NULL;
+	}
+	return dst;
+}
+
+#else
 static const char rfc3986[] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -77,9 +111,6 @@ static char unescape(const char* what, size_t* px)
 		return 16 * hex2bin(what[1]) + hex2bin(what[2]);
 	}
 
-	if (*what == '+')
-		return ' ';
-
 	return *what;
 }
 
@@ -106,7 +137,7 @@ static char* escape(char* dst, char what)
 		return dst + 1;
 	}
 
-	sprintf(dst, "%%%02" PRIX8, what & 0xff);
+	sprintf(dst, "%%%02" PRIX8, (BYTE)(what & 0xff));
 	return dst + 3;
 }
 
@@ -124,6 +155,7 @@ char* winpr_str_url_encode(const char* str, size_t len)
 	}
 	return dst;
 }
+#endif
 
 BOOL winpr_str_append(const char* what, char* buffer, size_t size, const char* separator)
 {
@@ -142,16 +174,26 @@ BOOL winpr_str_append(const char* what, char* buffer, size_t size, const char* s
 	return TRUE;
 }
 
-int winpr_asprintf(char** s, size_t* slen, const char* templ, ...)
+WINPR_ATTR_FORMAT_ARG(3, 4)
+int winpr_asprintf(char** s, size_t* slen, WINPR_FORMAT_ARG const char* templ, ...)
 {
 	va_list ap;
 
-	WINPR_ASSERT(s);
-	WINPR_ASSERT(slen);
+	va_start(ap, templ);
+	int rc = winpr_vasprintf(s, slen, templ, ap);
+	va_end(ap);
+	return rc;
+}
+
+WINPR_ATTR_FORMAT_ARG(3, 0)
+int winpr_vasprintf(char** s, size_t* slen, WINPR_FORMAT_ARG const char* templ, va_list oap)
+{
+	va_list ap;
+
 	*s = NULL;
 	*slen = 0;
 
-	va_start(ap, templ);
+	va_copy(ap, oap);
 	const int length = vsnprintf(NULL, 0, templ, ap);
 	va_end(ap);
 	if (length < 0)
@@ -161,7 +203,7 @@ int winpr_asprintf(char** s, size_t* slen, const char* templ, ...)
 	if (!str)
 		return -1;
 
-	va_start(ap, templ);
+	va_copy(ap, oap);
 	const int plen = vsprintf(str, templ, ap);
 	va_end(ap);
 
@@ -175,12 +217,10 @@ int winpr_asprintf(char** s, size_t* slen, const char* templ, ...)
 
 char* _strdup(const char* strSource)
 {
-	char* strDestination;
-
 	if (strSource == NULL)
 		return NULL;
 
-	strDestination = strdup(strSource);
+	char* strDestination = strdup(strSource);
 
 	if (strDestination == NULL)
 		WLog_ERR(TAG, "strdup");
@@ -190,10 +230,11 @@ char* _strdup(const char* strSource)
 
 WCHAR* _wcsdup(const WCHAR* strSource)
 {
-	size_t len = _wcslen(strSource);
-	WCHAR* strDestination;
+	if (!strSource)
+		return NULL;
 
-	strDestination = calloc(len + 1, sizeof(WCHAR));
+	size_t len = _wcslen(strSource);
+	WCHAR* strDestination = calloc(len + 1, sizeof(WCHAR));
 
 	if (strDestination != NULL)
 		memcpy(strDestination, strSource, len * sizeof(WCHAR));
@@ -202,6 +243,19 @@ WCHAR* _wcsdup(const WCHAR* strSource)
 		WLog_ERR(TAG, "wcsdup");
 
 	return strDestination;
+}
+
+WCHAR* _wcsncat(WCHAR* dst, const WCHAR* src, size_t sz)
+{
+	WINPR_ASSERT(dst);
+	WINPR_ASSERT(src || (sz == 0));
+
+	const size_t dlen = _wcslen(dst);
+	const size_t slen = _wcsnlen(src, sz);
+	for (size_t x = 0; x < slen; x++)
+		dst[dlen + x] = src[x];
+	dst[dlen + slen] = '\0';
+	return dst;
 }
 
 int _stricmp(const char* string1, const char* string2)
@@ -269,11 +323,10 @@ size_t _wcslen(const WCHAR* str)
 
 size_t _wcsnlen(const WCHAR* str, size_t max)
 {
-	size_t x;
-
 	WINPR_ASSERT(str);
 
-	for (x = 0; x < max; x++)
+	size_t x = 0;
+	for (; x < max; x++)
 	{
 		if (str[x] == 0)
 			return x;
@@ -352,30 +405,30 @@ char* strtok_s(char* strToken, const char* strDelimit, char** context)
 
 WCHAR* wcstok_s(WCHAR* strToken, const WCHAR* strDelimit, WCHAR** context)
 {
-	WCHAR* nextToken;
-	WCHAR value;
+	WCHAR* nextToken = NULL;
+	WCHAR value = 0;
 
 	if (!strToken)
 		strToken = *context;
 
-	Data_Read_UINT16(strToken, value);
+	value = *strToken;
 
 	while (*strToken && _wcschr(strDelimit, value))
 	{
 		strToken++;
-		Data_Read_UINT16(strToken, value);
+		value = *strToken;
 	}
 
 	if (!*strToken)
 		return NULL;
 
 	nextToken = strToken++;
-	Data_Read_UINT16(strToken, value);
+	value = *strToken;
 
 	while (*strToken && !(_wcschr(strDelimit, value)))
 	{
 		strToken++;
-		Data_Read_UINT16(strToken, value);
+		value = *strToken;
 	}
 
 	if (*strToken)
@@ -397,8 +450,7 @@ WCHAR* wcstok_s(WCHAR* strToken, const WCHAR* strDelimit, WCHAR** context)
 
 LPSTR CharUpperA(LPSTR lpsz)
 {
-	size_t i;
-	size_t length;
+	size_t length = 0;
 
 	if (!lpsz)
 		return NULL;
@@ -419,7 +471,7 @@ LPSTR CharUpperA(LPSTR lpsz)
 		return lpsz;
 	}
 
-	for (i = 0; i < length; i++)
+	for (size_t i = 0; i < length; i++)
 	{
 		if ((lpsz[i] >= 'a') && (lpsz[i] <= 'z'))
 			lpsz[i] = lpsz[i] - 'a' + 'A';
@@ -430,8 +482,7 @@ LPSTR CharUpperA(LPSTR lpsz)
 
 LPWSTR CharUpperW(LPWSTR lpsz)
 {
-	size_t i;
-	size_t length;
+	size_t length = 0;
 
 	if (!lpsz)
 		return NULL;
@@ -452,7 +503,7 @@ LPWSTR CharUpperW(LPWSTR lpsz)
 		return lpsz;
 	}
 
-	for (i = 0; i < length; i++)
+	for (size_t i = 0; i < length; i++)
 	{
 		if ((lpsz[i] >= L'a') && (lpsz[i] <= L'z'))
 			lpsz[i] = lpsz[i] - L'a' + L'A';
@@ -463,12 +514,10 @@ LPWSTR CharUpperW(LPWSTR lpsz)
 
 DWORD CharUpperBuffA(LPSTR lpsz, DWORD cchLength)
 {
-	DWORD i;
-
 	if (cchLength < 1)
 		return 0;
 
-	for (i = 0; i < cchLength; i++)
+	for (DWORD i = 0; i < cchLength; i++)
 	{
 		if ((lpsz[i] >= 'a') && (lpsz[i] <= 'z'))
 			lpsz[i] = lpsz[i] - 'a' + 'A';
@@ -479,10 +528,9 @@ DWORD CharUpperBuffA(LPSTR lpsz, DWORD cchLength)
 
 DWORD CharUpperBuffW(LPWSTR lpsz, DWORD cchLength)
 {
-	DWORD i;
-	WCHAR value;
+	WCHAR value = 0;
 
-	for (i = 0; i < cchLength; i++)
+	for (DWORD i = 0; i < cchLength; i++)
 	{
 		Data_Read_UINT16(&lpsz[i], value);
 		value = WINPR_TOUPPERW(value);
@@ -494,8 +542,7 @@ DWORD CharUpperBuffW(LPWSTR lpsz, DWORD cchLength)
 
 LPSTR CharLowerA(LPSTR lpsz)
 {
-	size_t i;
-	size_t length;
+	size_t length = 0;
 
 	if (!lpsz)
 		return (LPSTR)NULL;
@@ -516,7 +563,7 @@ LPSTR CharLowerA(LPSTR lpsz)
 		return lpsz;
 	}
 
-	for (i = 0; i < length; i++)
+	for (size_t i = 0; i < length; i++)
 	{
 		if ((lpsz[i] >= 'A') && (lpsz[i] <= 'Z'))
 			lpsz[i] = lpsz[i] - 'A' + 'a';
@@ -533,12 +580,10 @@ LPWSTR CharLowerW(LPWSTR lpsz)
 
 DWORD CharLowerBuffA(LPSTR lpsz, DWORD cchLength)
 {
-	DWORD i;
-
 	if (cchLength < 1)
 		return 0;
 
-	for (i = 0; i < cchLength; i++)
+	for (DWORD i = 0; i < cchLength; i++)
 	{
 		if ((lpsz[i] >= 'A') && (lpsz[i] <= 'Z'))
 			lpsz[i] = lpsz[i] - 'A' + 'a';
@@ -549,10 +594,9 @@ DWORD CharLowerBuffA(LPSTR lpsz, DWORD cchLength)
 
 DWORD CharLowerBuffW(LPWSTR lpsz, DWORD cchLength)
 {
-	DWORD i;
-	WCHAR value;
+	WCHAR value = 0;
 
-	for (i = 0; i < cchLength; i++)
+	for (DWORD i = 0; i < cchLength; i++)
 	{
 		Data_Read_UINT16(&lpsz[i], value);
 		value = WINPR_TOLOWERW(value);
@@ -626,46 +670,6 @@ BOOL IsCharLowerW(WCHAR ch)
 		return 1;
 	else
 		return 0;
-}
-
-int lstrlenA(LPCSTR lpString)
-{
-	return (int)strlen(lpString);
-}
-
-int lstrlenW(LPCWSTR lpString)
-{
-	LPCWSTR p;
-
-	if (!lpString)
-		return 0;
-
-	p = (LPCWSTR)lpString;
-
-	while (*p)
-		p++;
-
-	return (int)(p - lpString);
-}
-
-int lstrcmpA(LPCSTR lpString1, LPCSTR lpString2)
-{
-	return strcmp(lpString1, lpString2);
-}
-
-int lstrcmpW(LPCWSTR lpString1, LPCWSTR lpString2)
-{
-	WCHAR value1, value2;
-
-	while (*lpString1 && (*lpString1 == *lpString2))
-	{
-		lpString1++;
-		lpString2++;
-	}
-
-	Data_Read_UINT16(lpString1, value1);
-	Data_Read_UINT16(lpString2, value2);
-	return value1 - value2;
 }
 
 #endif
@@ -751,7 +755,7 @@ char* ConvertLineEndingToCRLF(const char* str, size_t* size)
 char* StrSep(char** stringp, const char* delim)
 {
 	char* start = *stringp;
-	char* p;
+	char* p = NULL;
 	p = (start != NULL) ? strpbrk(start, delim) : NULL;
 
 	if (!p)
@@ -818,3 +822,11 @@ char* strndup(const char* src, size_t n)
 	return dst;
 }
 #endif
+
+const WCHAR* InitializeConstWCharFromUtf8(const char* str, WCHAR* buffer, size_t len)
+{
+	WINPR_ASSERT(str);
+	WINPR_ASSERT(buffer || (len == 0));
+	ConvertUtf8ToWChar(str, buffer, len);
+	return buffer;
+}

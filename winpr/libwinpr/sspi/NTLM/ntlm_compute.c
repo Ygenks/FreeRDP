@@ -38,7 +38,7 @@
 
 #define NTLM_CheckAndLogRequiredCapacity(tag, s, nmemb, what)                                    \
 	Stream_CheckAndLogRequiredCapacityEx(tag, WLOG_WARN, s, nmemb, 1, "%s(%s:%" PRIuz ") " what, \
-	                                     __FUNCTION__, __FILE__, (size_t)__LINE__)
+	                                     __func__, __FILE__, (size_t)__LINE__)
 
 static char NTLM_CLIENT_SIGN_MAGIC[] = "session key to client-to-server signing key magic constant";
 static char NTLM_SERVER_SIGN_MAGIC[] = "session key to server-to-client signing key magic constant";
@@ -57,16 +57,27 @@ static const BYTE NTLM_NULL_BUFFER[16] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0
 
 BOOL ntlm_get_version_info(NTLM_VERSION_INFO* versionInfo)
 {
-	OSVERSIONINFOA osVersionInfo = { 0 };
-
 	WINPR_ASSERT(versionInfo);
 
+#if defined(WITH_WINPR_DEPRECATED)
+	OSVERSIONINFOA osVersionInfo = { 0 };
 	osVersionInfo.dwOSVersionInfoSize = sizeof(OSVERSIONINFOA);
 	if (!GetVersionExA(&osVersionInfo))
 		return FALSE;
 	versionInfo->ProductMajorVersion = (UINT8)osVersionInfo.dwMajorVersion;
 	versionInfo->ProductMinorVersion = (UINT8)osVersionInfo.dwMinorVersion;
 	versionInfo->ProductBuild = (UINT16)osVersionInfo.dwBuildNumber;
+#else
+	/* Always return fixed version number.
+	 *
+	 * ProductVersion is fixed since windows 10 to Major 10, Minor 0
+	 * ProductBuild taken from https://en.wikipedia.org/wiki/Windows_11_version_history
+	 * with most recent (pre) release build number
+	 */
+	versionInfo->ProductMajorVersion = 10;
+	versionInfo->ProductMinorVersion = 0;
+	versionInfo->ProductBuild = 22631;
+#endif
 	ZeroMemory(versionInfo->Reserved, sizeof(versionInfo->Reserved));
 	versionInfo->NTLMRevisionCurrent = NTLMSSP_REVISION_W2K3;
 	return TRUE;
@@ -111,7 +122,7 @@ BOOL ntlm_write_version_info(wStream* s, const NTLM_VERSION_INFO* versionInfo)
 
 	if (!Stream_CheckAndLogRequiredCapacityEx(
 	        TAG, WLOG_WARN, s, 5ull + sizeof(versionInfo->Reserved), 1ull,
-	        "%s(%s:%" PRIuz ") NTLM_VERSION_INFO", __FUNCTION__, __FILE__, (size_t)__LINE__))
+	        "%s(%s:%" PRIuz ") NTLM_VERSION_INFO", __func__, __FILE__, (size_t)__LINE__))
 		return FALSE;
 
 	Stream_Write_UINT8(s, versionInfo->ProductMajorVersion); /* ProductMajorVersion (1 byte) */
@@ -143,7 +154,7 @@ void ntlm_print_version_info(const NTLM_VERSION_INFO* versionInfo)
 
 static BOOL ntlm_read_ntlm_v2_client_challenge(wStream* s, NTLMv2_CLIENT_CHALLENGE* challenge)
 {
-	size_t size;
+	size_t size = 0;
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(challenge);
 
@@ -182,7 +193,7 @@ static BOOL ntlm_read_ntlm_v2_client_challenge(wStream* s, NTLMv2_CLIENT_CHALLEN
 static BOOL ntlm_write_ntlm_v2_client_challenge(wStream* s,
                                                 const NTLMv2_CLIENT_CHALLENGE* challenge)
 {
-	ULONG length;
+	ULONG length = 0;
 
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(challenge);
@@ -237,15 +248,12 @@ BOOL ntlm_write_ntlm_v2_response(wStream* s, const NTLMv2_RESPONSE* response)
 
 void ntlm_current_time(BYTE* timestamp)
 {
-	FILETIME filetime = { 0 };
-	ULARGE_INTEGER time64 = { 0 };
+	FILETIME ft = { 0 };
 
 	WINPR_ASSERT(timestamp);
 
-	GetSystemTimeAsFileTime(&filetime);
-	time64.u.LowPart = filetime.dwLowDateTime;
-	time64.u.HighPart = filetime.dwHighDateTime;
-	CopyMemory(timestamp, &(time64.QuadPart), 8);
+	GetSystemTimeAsFileTime(&ft);
+	CopyMemory(timestamp, &(ft), sizeof(ft));
 }
 
 /**
@@ -269,7 +277,7 @@ static BOOL ntlm_fetch_ntlm_v2_hash(NTLM_CONTEXT* context, BYTE* hash)
 	BOOL rc = FALSE;
 	WINPR_SAM* sam = NULL;
 	WINPR_SAM_ENTRY* entry = NULL;
-	SSPI_CREDENTIALS* credentials;
+	SSPI_CREDENTIALS* credentials = NULL;
 
 	WINPR_ASSERT(context);
 	WINPR_ASSERT(hash);
@@ -349,7 +357,7 @@ static int ntlm_convert_password_hash(NTLM_CONTEXT* context, BYTE* hash)
 
 static BOOL ntlm_compute_ntlm_v2_hash(NTLM_CONTEXT* context, BYTE* hash)
 {
-	SSPI_CREDENTIALS* credentials;
+	SSPI_CREDENTIALS* credentials = NULL;
 
 	WINPR_ASSERT(context);
 	WINPR_ASSERT(hash);
@@ -408,8 +416,9 @@ static BOOL ntlm_compute_ntlm_v2_hash(NTLM_CONTEXT* context, BYTE* hash)
 	}
 	else if (context->HashCallback)
 	{
-		int ret;
-		SecBuffer proofValue, micValue;
+		int ret = 0;
+		SecBuffer proofValue;
+		SecBuffer micValue;
 
 		if (ntlm_computeProofValue(context, &proofValue) != SEC_E_OK)
 			return FALSE;
@@ -438,7 +447,7 @@ static BOOL ntlm_compute_ntlm_v2_hash(NTLM_CONTEXT* context, BYTE* hash)
 
 BOOL ntlm_compute_lm_v2_response(NTLM_CONTEXT* context)
 {
-	BYTE* response;
+	BYTE* response = NULL;
 	BYTE value[WINPR_MD5_DIGEST_LENGTH] = { 0 };
 
 	WINPR_ASSERT(context);
@@ -486,10 +495,10 @@ BOOL ntlm_compute_lm_v2_response(NTLM_CONTEXT* context)
 
 BOOL ntlm_compute_ntlm_v2_response(NTLM_CONTEXT* context)
 {
-	BYTE* blob;
+	BYTE* blob = NULL;
 	SecBuffer ntlm_v2_temp = { 0 };
 	SecBuffer ntlm_v2_temp_chal = { 0 };
-	PSecBuffer TargetInfo;
+	PSecBuffer TargetInfo = NULL;
 
 	WINPR_ASSERT(context);
 
@@ -695,7 +704,7 @@ static BOOL ntlm_generate_signing_key(BYTE* exported_session_key, const SecBuffe
                                       BYTE* signing_key)
 {
 	BOOL rc = FALSE;
-	size_t length;
+	size_t length = 0;
 	BYTE* value = NULL;
 
 	WINPR_ASSERT(exported_session_key);

@@ -42,8 +42,21 @@ static constexpr char plugin_name[] = "bitmap-filter";
 static constexpr char plugin_desc[] =
     "this plugin deactivates and filters persistent bitmap cache.";
 
-static const std::vector<std::string> plugin_static_intercept = { DRDYNVC_SVC_CHANNEL_NAME };
-static const std::vector<std::string> plugin_dyn_intercept = { RDPGFX_DVC_CHANNEL_NAME };
+static const std::vector<std::string>& plugin_static_intercept()
+{
+	static std::vector<std::string> vec;
+	if (vec.empty())
+		vec.push_back(DRDYNVC_SVC_CHANNEL_NAME);
+	return vec;
+}
+
+static const std::vector<std::string>& plugin_dyn_intercept()
+{
+	static std::vector<std::string> vec;
+	if (vec.empty())
+		vec.push_back(RDPGFX_DVC_CHANNEL_NAME);
+	return vec;
+}
 
 class DynChannelState
 {
@@ -126,8 +139,8 @@ static BOOL filter_dyn_channel_intercept_list(proxyPlugin* plugin, proxyData* pd
 	WINPR_ASSERT(pdata);
 	WINPR_ASSERT(data);
 
-	auto intercept = std::find(plugin_dyn_intercept.begin(), plugin_dyn_intercept.end(),
-	                           data->name) != plugin_dyn_intercept.end();
+	auto intercept = std::find(plugin_dyn_intercept().begin(), plugin_dyn_intercept().end(),
+	                           data->name) != plugin_dyn_intercept().end();
 	if (intercept)
 		data->intercept = TRUE;
 	return TRUE;
@@ -141,8 +154,8 @@ static BOOL filter_static_channel_intercept_list(proxyPlugin* plugin, proxyData*
 	WINPR_ASSERT(pdata);
 	WINPR_ASSERT(data);
 
-	auto intercept = std::find(plugin_static_intercept.begin(), plugin_static_intercept.end(),
-	                           data->name) != plugin_static_intercept.end();
+	auto intercept = std::find(plugin_static_intercept().begin(), plugin_static_intercept().end(),
+	                           data->name) != plugin_static_intercept().end();
 	if (intercept)
 		data->intercept = TRUE;
 	return TRUE;
@@ -259,20 +272,18 @@ static UINT8 drdynvc_value_to_cblen(UINT32 value)
 
 static BOOL drdynvc_write_variable_uint(wStream* s, UINT32 value, UINT8 cbLen)
 {
-	UINT32 val = 0;
-
 	switch (cbLen)
 	{
 		case 0:
-			Stream_Write_UINT8(s, (UINT8)val);
+			Stream_Write_UINT8(s, static_cast<UINT8>(value));
 			break;
 
 		case 1:
-			Stream_Write_UINT16(s, (UINT16)val);
+			Stream_Write_UINT16(s, static_cast<UINT16>(value));
 			break;
 
 		default:
-			Stream_Write_UINT32(s, val);
+			Stream_Write_UINT32(s, value);
 			break;
 	}
 

@@ -21,6 +21,7 @@
 #include <freerdp/config.h>
 #include <freerdp/log.h>
 
+#include "settings.h"
 #include "rdp.h"
 #include "multitransport.h"
 
@@ -61,15 +62,31 @@ state_run_t multitransport_recv_request(rdpMultitransport* multi, wStream* s)
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 24))
 		return STATE_RUN_FAILED;
 
-	UINT32 requestId;
-	UINT16 requestedProto;
-	const BYTE* cookie;
+	UINT32 requestId = 0;
+	UINT16 requestedProto = 0;
+	UINT16 reserved = 0;
+	const BYTE* cookie = NULL;
 
 	Stream_Read_UINT32(s, requestId);      /* requestId (4 bytes) */
 	Stream_Read_UINT16(s, requestedProto); /* requestedProtocol (2 bytes) */
-	Stream_Seek(s, 2);                     /* reserved (2 bytes) */
-	cookie = Stream_Pointer(s);
+	Stream_Read_UINT16(s, reserved);       /* reserved (2 bytes) */
+	cookie = Stream_ConstPointer(s);
 	Stream_Seek(s, RDPUDP_COOKIE_LEN); /* securityCookie (16 bytes) */
+	if (reserved != 0)
+	{
+		/*
+		 * If the reserved filed is not 0 the request PDU seems to contain some extra data.
+		 * If the reserved value is 1, then two bytes of 0 (probably a version field)
+		 * are followed by a JSON payload (not null terminated, until the end of the packet.
+		 * There seems to be no dedicated length field)
+		 *
+		 * for now just ignore all that
+		 */
+		WLog_WARN(TAG,
+		          "reserved is %" PRIu16 " instead of 0, skipping %" PRIuz "bytes of unknown data",
+		          reserved, Stream_GetRemainingLength(s));
+		Stream_SafeSeek(s, Stream_GetRemainingLength(s));
+	}
 
 	WINPR_ASSERT(multi->MtRequest);
 	return multi->MtRequest(multi, requestId, requestedProto, cookie);
@@ -155,8 +172,8 @@ state_run_t multitransport_recv_response(rdpMultitransport* multi, wStream* s)
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 8))
 		return STATE_RUN_FAILED;
 
-	UINT32 requestId;
-	HRESULT hr;
+	UINT32 requestId = 0;
+	HRESULT hr = 0;
 
 	Stream_Read_UINT32(s, requestId); /* requestId (4 bytes) */
 	Stream_Read_UINT32(s, hr);        /* hrResponse (4 bytes) */

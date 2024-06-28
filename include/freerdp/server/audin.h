@@ -105,10 +105,6 @@ extern "C"
 
 		/**
 		 * Send an Open PDU.
-		 *
-		 * In case of ExtraFormatData is not NULL, the SubFormat is always
-		 * KSDATAFORMAT_SUBTYPE_PCM, i.e. it is not required to be explicitly set by
-		 * the API user.
 		 */
 		psAudinServerOpen SendOpen;
 
@@ -157,13 +153,15 @@ extern "C"
 		rdpContext* rdpcontext;
 	};
 
-	FREERDP_API audin_server_context* audin_server_context_new(HANDLE vcm);
 	FREERDP_API void audin_server_context_free(audin_server_context* context);
+
+	WINPR_ATTR_MALLOC(audin_server_context_free, 1)
+	FREERDP_API audin_server_context* audin_server_context_new(HANDLE vcm);
 
 	/** \brief sets the supported audio formats for AUDIN server channel context.
 	 *
 	 *  \param context The context to set the formats for
-	 *  \param count The number of formats found in \formats. Use \b -1 to set to default formats
+	 *  \param count The number of formats found in \b formats. Use \b -1 to set to default formats
 	 * supported by FreeRDP \param formats An array of \b count elements
 	 *
 	 *  \return \b TRUE if successful and at least one format is supported, \b FALSE otherwise.

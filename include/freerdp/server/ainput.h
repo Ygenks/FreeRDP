@@ -37,7 +37,7 @@ extern "C"
 		AINPUT_SERVER_OPEN_RESULT_ERROR = 3
 	} AINPUT_SERVER_OPEN_RESULT;
 
-	typedef struct _ainput_server_context ainput_server_context;
+	typedef struct s_ainput_server_context ainput_server_context;
 
 	typedef BOOL (*psAInputChannelIdAssigned)(ainput_server_context* context, UINT32 channelId);
 
@@ -54,7 +54,7 @@ extern "C"
 	typedef UINT (*psAInputServerMouseEvent)(ainput_server_context* context, UINT64 timestamp,
 	                                         UINT64 flags, INT32 x, INT32 y);
 
-	struct _ainput_server_context
+	struct s_ainput_server_context
 	{
 		HANDLE vcm;
 
@@ -112,8 +112,10 @@ extern "C"
 		psAInputChannelIdAssigned ChannelIdAssigned;
 	};
 
-	FREERDP_API ainput_server_context* ainput_server_context_new(HANDLE vcm);
 	FREERDP_API void ainput_server_context_free(ainput_server_context* context);
+
+	WINPR_ATTR_MALLOC(ainput_server_context_free, 1)
+	FREERDP_API ainput_server_context* ainput_server_context_new(HANDLE vcm);
 
 #ifdef __cplusplus
 }

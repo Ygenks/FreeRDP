@@ -40,6 +40,7 @@ extern "C"
 	                                const char* separator);
 
 	WINPR_API int winpr_asprintf(char** s, size_t* slen, const char* templ, ...);
+	WINPR_API int winpr_vasprintf(char** s, size_t* slen, const char* templ, va_list ap);
 
 #ifndef _WIN32
 
@@ -80,6 +81,7 @@ extern "C"
 	WINPR_API char* strtok_s(char* strToken, const char* strDelimit, char** context);
 	WINPR_API WCHAR* wcstok_s(WCHAR* strToken, const WCHAR* strDelimit, WCHAR** context);
 
+	WINPR_API WCHAR* _wcsncat(WCHAR* dst, const WCHAR* src, size_t sz);
 #else
 
 #define _wcscmp wcscmp
@@ -89,6 +91,7 @@ extern "C"
 #define _wcsstr wcsstr
 #define _wcschr wcschr
 #define _wcsrchr wcsrchr
+#define _wcsncat wcsncat
 
 #endif /* _WIN32 */
 
@@ -164,24 +167,6 @@ extern "C"
 #define IsCharLower IsCharLowerW
 #else
 #define IsCharLower IsCharLowerA
-#endif
-
-	WINPR_API int lstrlenA(LPCSTR lpString);
-	WINPR_API int lstrlenW(LPCWSTR lpString);
-
-#ifdef UNICODE
-#define lstrlen lstrlenW
-#else
-#define lstrlen lstrlenA
-#endif
-
-	WINPR_API int lstrcmpA(LPCSTR lpString1, LPCSTR lpString2);
-	WINPR_API int lstrcmpW(LPCWSTR lpString1, LPCWSTR lpString2);
-
-#ifdef UNICODE
-#define lstrcmp lstrcmpW
-#else
-#define lstrcmp lstrcmpA
 #endif
 
 #endif
@@ -405,6 +390,16 @@ extern "C"
 	 */
 	WINPR_API WCHAR* ConvertMszUtf8NToWCharAlloc(const char* str, size_t len, size_t* pSize);
 
+	/** \brief Helper function to initialize const WCHAR pointer from a Utf8 string
+	 *
+	 *  \param str The Utf8 string to use for initialization
+	 *  \param buffer The WCHAR buffer used to store the converted data
+	 *  \param len The size of the buffer in number of WCHAR
+	 *
+	 *  \return The WCHAR string (a pointer to buffer)
+	 */
+	WINPR_API const WCHAR* InitializeConstWCharFromUtf8(const char* str, WCHAR* buffer, size_t len);
+
 #if defined(WITH_WINPR_DEPRECATED)
 	WINPR_API WINPR_DEPRECATED_VAR("Use ConvertUtf8ToWChar functions instead",
 	                               int ConvertToUnicode(UINT CodePage, DWORD dwFlags,
@@ -419,7 +414,7 @@ extern "C"
 	                                                      LPBOOL lpUsedDefaultChar));
 #endif
 
-	WINPR_API void ByteSwapUnicode(WCHAR* wstr, size_t length);
+	WINPR_API const WCHAR* ByteSwapUnicode(WCHAR* wstr, size_t length);
 
 	WINPR_API size_t ConvertLineEndingToLF(char* str, size_t size);
 	WINPR_API char* ConvertLineEndingToCRLF(const char* str, size_t* size);

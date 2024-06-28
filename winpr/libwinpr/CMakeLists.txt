@@ -16,6 +16,7 @@
 # limitations under the License.
 
 include(CheckFunctionExists)
+include(JsonDetect)
 
 set(WINPR_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(WINPR_SRCS "")
@@ -103,6 +104,22 @@ endmacro()
 
 set(CMAKE_REQUIRED_LIBRARIES rt)
 
+find_package(uriparser)
+option(WITH_URIPARSER "use uriparser library to handle URIs" ${uriparser_FOUND})
+if (WITH_URIPARSER)
+	find_package(uriparser CONFIG COMPONENTS char)
+	if (uriparser_FOUND)
+		winpr_library_add_private(uriparser::uriparser)
+	else()
+		find_package(PkgConfig REQUIRED)
+		pkg_check_modules(uriparser REQUIRED liburiparser)
+		winpr_include_directory_add(${uriparser_INCLUDEDIR})
+		winpr_include_directory_add(${uriparser_INCLUDE_DIRS})
+		winpr_library_add_private(${uriparser_LIBRARIES})
+	endif()
+	add_definitions("-DWITH_URIPARSER")
+endif()
+
 if(NOT IOS)
     check_function_exists(timer_create TIMER_CREATE)
     check_function_exists(timer_delete TIMER_DELETE)
@@ -112,6 +129,11 @@ if(NOT IOS)
         add_definitions(-DWITH_POSIX_TIMER)
         winpr_library_add_private(rt)
     endif()
+endif()
+
+check_function_exists(pthread_setschedprio PTHREAD_SETSCHEDPRIO)
+if (PTHREAD_SETSCHEDPRIO)
+	winpr_definition_add(-DPTHREAD_SETSCHEDPRIO)
 endif()
 
 if (ANDROID)
@@ -141,35 +163,12 @@ list(REMOVE_DUPLICATES WINPR_DEFINITIONS)
 list(REMOVE_DUPLICATES WINPR_COMPILE_OPTIONS)
 list(REMOVE_DUPLICATES WINPR_LINK_OPTIONS)
 list(REMOVE_DUPLICATES WINPR_LINK_DIRS)
-list(REMOVE_DUPLICATES WINPR_LIBS_PRIVATE)
-list(REMOVE_DUPLICATES WINPR_LIBS_PUBLIC)
 list(REMOVE_DUPLICATES WINPR_INCLUDES)
 
-# On windows create dll version information.
-# Vendor, product and year are already set in top level CMakeLists.txt
-if (WIN32)
-  set (RC_VERSION_MAJOR ${WINPR_VERSION_MAJOR})
-  set (RC_VERSION_MINOR ${WINPR_VERSION_MINOR})
-  set (RC_VERSION_BUILD ${WINPR_VERSION_REVISION})
-  set (RC_VERSION_FILE "${CMAKE_SHARED_LIBRARY_PREFIX}${MODULE_NAME}${WINPR_API_VERSION}${CMAKE_SHARED_LIBRARY_SUFFIX}" )
+AddTargetWithResourceFile(${MODULE_NAME} FALSE "${WINPR_VERSION}" WINPR_SRCS)
 
-  configure_file(
-    ${PROJECT_SOURCE_DIR}/cmake/WindowsDLLVersion.rc.in
-    ${CMAKE_CURRENT_BINARY_DIR}/version.rc
-    @ONLY)
-
-  set (WINPR_SRCS ${WINPR_SRCS} ${CMAKE_CURRENT_BINARY_DIR}/version.rc)
-  winpr_library_add_public("shlwapi")
-endif()
-
-add_library(${MODULE_NAME} ${WINPR_SRCS})
 if (APPLE)
     set_target_properties(${MODULE_NAME} PROPERTIES INTERPROCEDURAL_OPTIMIZATION FALSE)
-endif()
-set_target_properties(${MODULE_NAME} PROPERTIES LINKER_LANGUAGE C)
-set_target_properties(${MODULE_NAME} PROPERTIES OUTPUT_NAME ${MODULE_NAME}${WINPR_API_VERSION})
-if (WITH_LIBRARY_VERSIONING)
-    set_target_properties(${MODULE_NAME} PROPERTIES VERSION ${WINPR_VERSION} SOVERSION ${WINPR_API_VERSION})
 endif()
 
 if (NOT BUILD_SHARED_LIBS)
@@ -179,6 +178,7 @@ else()
 endif()
 target_link_options(${MODULE_NAME} ${LINK_OPTS_MODE} ${WINPR_LINK_OPTIONS})
 target_include_directories(${MODULE_NAME} PRIVATE ${WINPR_INCLUDES})
+target_include_directories(${MODULE_NAME} INTERFACE $<INSTALL_INTERFACE:include/winpr${WINPR_VERSION_MAJOR}>)
 target_link_directories(${MODULE_NAME} PRIVATE ${WINPR_LINK_DIRS})
 target_compile_options(${MODULE_NAME} PRIVATE ${WINPR_COMPILE_OPTIONS})
 target_compile_definitions(${MODULE_NAME} PRIVATE ${WINPR_DEFINITIONS})
@@ -189,8 +189,4 @@ install(TARGETS ${MODULE_NAME} COMPONENT libraries EXPORT WinPRTargets
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-if (WITH_DEBUG_SYMBOLS AND MSVC AND BUILD_SHARED_LIBS)
-    get_target_property(OUTPUT_FILENAME ${MODULE_NAME} OUTPUT_NAME)
-    install(FILES ${CMAKE_PDB_BINARY_DIR}/${OUTPUT_FILENAME}.pdb DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT symbols)
-endif()
 set_property(TARGET ${MODULE_NAME} PROPERTY FOLDER "WinPR/libwinpr")

@@ -29,16 +29,16 @@
 
 #define STREAM_TAG WINPR_TAG("wStream")
 
-#define STREAM_ASSERT(cond)                                                                \
-	do                                                                                     \
-	{                                                                                      \
-		if (!(cond))                                                                       \
-		{                                                                                  \
-			WLog_FATAL(STREAM_TAG, "%s [%s:%s:%" PRIuz "]", #cond, __FILE__, __FUNCTION__, \
-			           (size_t)__LINE__);                                                  \
-			winpr_log_backtrace(STREAM_TAG, WLOG_FATAL, 20);                               \
-			abort();                                                                       \
-		}                                                                                  \
+#define STREAM_ASSERT(cond)                                                            \
+	do                                                                                 \
+	{                                                                                  \
+		if (!(cond))                                                                   \
+		{                                                                              \
+			WLog_FATAL(STREAM_TAG, "%s [%s:%s:%" PRIuz "]", #cond, __FILE__, __func__, \
+			           (size_t)__LINE__);                                              \
+			winpr_log_backtrace(STREAM_TAG, WLOG_FATAL, 20);                           \
+			abort();                                                                   \
+		}                                                                              \
 	} while (0)
 
 BOOL Stream_EnsureCapacity(wStream* s, size_t size)
@@ -46,10 +46,10 @@ BOOL Stream_EnsureCapacity(wStream* s, size_t size)
 	WINPR_ASSERT(s);
 	if (s->capacity < size)
 	{
-		size_t position;
-		size_t old_capacity;
-		size_t new_capacity;
-		BYTE* new_buf;
+		size_t position = 0;
+		size_t old_capacity = 0;
+		size_t new_capacity = 0;
+		BYTE* new_buf = NULL;
 
 		old_capacity = s->capacity;
 		new_capacity = old_capacity;
@@ -93,7 +93,7 @@ BOOL Stream_EnsureRemainingCapacity(wStream* s, size_t size)
 
 wStream* Stream_New(BYTE* buffer, size_t size)
 {
-	wStream* s;
+	wStream* s = NULL;
 
 	if (!buffer && !size)
 		return NULL;
@@ -155,7 +155,7 @@ wStream* Stream_StaticInit(wStream* s, BYTE* buffer, size_t size)
 
 void Stream_EnsureValidity(wStream* s)
 {
-	size_t cur;
+	size_t cur = 0;
 
 	STREAM_ASSERT(s);
 	STREAM_ASSERT(s->pointer >= s->buffer);
@@ -202,7 +202,7 @@ BOOL Stream_SetPosition(wStream* _s, size_t _p)
 
 void Stream_SealLength(wStream* _s)
 {
-	size_t cur;
+	size_t cur = 0;
 	WINPR_ASSERT(_s);
 	WINPR_ASSERT(_s->buffer <= _s->pointer);
 	cur = (size_t)(_s->pointer - _s->buffer);
@@ -250,7 +250,7 @@ void Stream_SetCapacity(wStream* _s, size_t _c)
 
 size_t Stream_GetRemainingCapacity(const wStream* _s)
 {
-	size_t cur;
+	size_t cur = 0;
 	WINPR_ASSERT(_s);
 	WINPR_ASSERT(_s->buffer <= _s->pointer);
 	cur = (size_t)(_s->pointer - _s->buffer);
@@ -266,7 +266,7 @@ size_t Stream_GetRemainingCapacity(const wStream* _s)
 
 size_t Stream_GetRemainingLength(const wStream* _s)
 {
-	size_t cur;
+	size_t cur = 0;
 	WINPR_ASSERT(_s);
 	WINPR_ASSERT(_s->buffer <= _s->pointer);
 	WINPR_ASSERT(_s->length <= _s->capacity);
@@ -283,8 +283,6 @@ size_t Stream_GetRemainingLength(const wStream* _s)
 
 BOOL Stream_Write_UTF16_String(wStream* s, const WCHAR* src, size_t length)
 {
-	size_t x;
-
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(src || (length == 0));
 	if (!s || !src)
@@ -293,7 +291,7 @@ BOOL Stream_Write_UTF16_String(wStream* s, const WCHAR* src, size_t length)
 	if (!Stream_CheckAndLogRequiredCapacityOfSize(STREAM_TAG, (s), length, sizeof(WCHAR)))
 		return FALSE;
 
-	for (x = 0; x < length; x++)
+	for (size_t x = 0; x < length; x++)
 		Stream_Write_UINT16(s, src[x]);
 
 	return TRUE;
@@ -301,15 +299,13 @@ BOOL Stream_Write_UTF16_String(wStream* s, const WCHAR* src, size_t length)
 
 BOOL Stream_Read_UTF16_String(wStream* s, WCHAR* dst, size_t length)
 {
-	size_t x;
-
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(dst);
 
 	if (!Stream_CheckAndLogRequiredLengthOfSize(STREAM_TAG, s, length, sizeof(WCHAR)))
 		return FALSE;
 
-	for (x = 0; x < length; x++)
+	for (size_t x = 0; x < length; x++)
 		Stream_Read_UINT16(s, dst[x]);
 
 	return TRUE;
@@ -346,8 +342,10 @@ BOOL Stream_CheckAndLogRequiredCapacityExVa(const char* tag, DWORD level, wStrea
 	return TRUE;
 }
 
+WINPR_ATTR_FORMAT_ARG(6, 0)
 BOOL Stream_CheckAndLogRequiredCapacityWLogExVa(wLog* log, DWORD level, wStream* s, size_t nmemb,
-                                                size_t size, const char* fmt, va_list args)
+                                                size_t size, WINPR_FORMAT_ARG const char* fmt,
+                                                va_list args)
 {
 
 	WINPR_ASSERT(size != 0);
@@ -369,8 +367,9 @@ BOOL Stream_CheckAndLogRequiredCapacityWLogExVa(wLog* log, DWORD level, wStream*
 	return TRUE;
 }
 
+WINPR_ATTR_FORMAT_ARG(6, 7)
 BOOL Stream_CheckAndLogRequiredCapacityWLogEx(wLog* log, DWORD level, wStream* s, size_t nmemb,
-                                              size_t size, const char* fmt, ...)
+                                              size_t size, WINPR_FORMAT_ARG const char* fmt, ...)
 {
 
 	WINPR_ASSERT(size != 0);
@@ -389,8 +388,9 @@ BOOL Stream_CheckAndLogRequiredCapacityWLogEx(wLog* log, DWORD level, wStream* s
 	return TRUE;
 }
 
+WINPR_ATTR_FORMAT_ARG(6, 7)
 BOOL Stream_CheckAndLogRequiredLengthEx(const char* tag, DWORD level, wStream* s, size_t nmemb,
-                                        size_t size, const char* fmt, ...)
+                                        size_t size, WINPR_FORMAT_ARG const char* fmt, ...)
 {
 	WINPR_ASSERT(size > 0);
 	const size_t actual = Stream_GetRemainingLength(s) / size;
@@ -439,8 +439,10 @@ BOOL Stream_CheckAndLogRequiredLengthWLogEx(wLog* log, DWORD level, wStream* s, 
 	return TRUE;
 }
 
+WINPR_ATTR_FORMAT_ARG(6, 0)
 BOOL Stream_CheckAndLogRequiredLengthWLogExVa(wLog* log, DWORD level, wStream* s, size_t nmemb,
-                                              size_t size, const char* fmt, va_list args)
+                                              size_t size, WINPR_FORMAT_ARG const char* fmt,
+                                              va_list args)
 {
 	WINPR_ASSERT(size > 0);
 	const size_t actual = Stream_GetRemainingLength(s) / size;
@@ -464,12 +466,7 @@ BOOL Stream_CheckAndLogRequiredLengthWLogExVa(wLog* log, DWORD level, wStream* s
 SSIZE_T Stream_Write_UTF16_String_From_UTF8(wStream* s, size_t dlen, const char* src, size_t length,
                                             BOOL fill)
 {
-	union
-	{
-		WCHAR* wc;
-		BYTE* b;
-	} cnv;
-	cnv.b = Stream_Pointer(s);
+	WCHAR* str = Stream_PointerAs(s, WCHAR);
 
 	if (length == 0)
 		return 0;
@@ -477,7 +474,7 @@ SSIZE_T Stream_Write_UTF16_String_From_UTF8(wStream* s, size_t dlen, const char*
 	if (!Stream_CheckAndLogRequiredCapacityOfSize(STREAM_TAG, s, dlen, sizeof(WCHAR)))
 		return -1;
 
-	SSIZE_T rc = ConvertUtf8NToWChar(src, length, cnv.wc, dlen);
+	SSIZE_T rc = ConvertUtf8NToWChar(src, length, str, dlen);
 	if (rc < 0)
 		return -1;
 
@@ -490,12 +487,7 @@ SSIZE_T Stream_Write_UTF16_String_From_UTF8(wStream* s, size_t dlen, const char*
 
 char* Stream_Read_UTF16_String_As_UTF8(wStream* s, size_t dlen, size_t* psize)
 {
-	union
-	{
-		const WCHAR* wc;
-		const BYTE* b;
-	} cnv;
-	cnv.b = Stream_Pointer(s);
+	const WCHAR* str = Stream_ConstPointer(s);
 	if (dlen > SIZE_MAX / sizeof(WCHAR))
 		return NULL;
 
@@ -503,13 +495,13 @@ char* Stream_Read_UTF16_String_As_UTF8(wStream* s, size_t dlen, size_t* psize)
 		return NULL;
 
 	Stream_Seek(s, dlen * sizeof(WCHAR));
-	return ConvertWCharNToUtf8Alloc(cnv.wc, dlen, psize);
+	return ConvertWCharNToUtf8Alloc(str, dlen, psize);
 }
 
 SSIZE_T Stream_Read_UTF16_String_As_UTF8_Buffer(wStream* s, size_t wcharLength, char* utfBuffer,
                                                 size_t utfBufferCharLength)
 {
-	const WCHAR* ptr = (const WCHAR*)Stream_Pointer(s);
+	const WCHAR* ptr = Stream_ConstPointer(s);
 	if (wcharLength > SIZE_MAX / sizeof(WCHAR))
 		return -1;
 

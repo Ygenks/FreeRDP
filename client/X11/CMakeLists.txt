@@ -17,27 +17,28 @@
 # limitations under the License.
 cmake_minimum_required(VERSION 3.13)
 
-project(xfreerdp-client LANGUAGES C)
+if (NOT FREERDP_DEFAULT_PROJECT_VERSION)
+	set(FREERDP_DEFAULT_PROJECT_VERSION "1.0.0.0")
+endif()
+
+project(xfreerdp-client
+	LANGUAGES C
+	VERSION ${FREERDP_DEFAULT_PROJECT_VERSION}
+)
+
+message("project ${PROJECT_NAME} is using version ${PROJECT_VERSION}")
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
 
-option(CMAKE_COLOR_MAKEFILE "colorful CMake makefile" ON)
-option(CMAKE_VERBOSE_MAKEFILE "verbose CMake makefile" ON)
-option(CMAKE_POSITION_INDEPENDENT_CODE "build with position independent code (-fPIC or -fPIE)" ON)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/)
+include(CommonConfigOptions)
 
 include(ConfigureFreeRDP)
 
-include(GNUInstallDirsWrapper)
-
-# RPATH configuration
-include(ConfigureRPATH)
-
 find_package(X11 REQUIRED)
 
-include(FindDocBookXSL)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../resources)
 include_directories(${X11_INCLUDE_DIRS})
 include_directories(${OPENSSL_INCLUDE_DIR})
@@ -45,8 +46,6 @@ include_directories(${OPENSSL_INCLUDE_DIR})
 set(SRCS
 	xf_utils.h
 	xf_utils.c
-	xf_gdi.c
-	xf_gdi.h
 	xf_gfx.c
 	xf_gfx.h
 	xf_rail.c
@@ -85,81 +84,24 @@ if (CHANNEL_TSMF_CLIENT)
 	)
 endif()
 
-if(WITH_CLIENT_INTERFACE)
-	if(CLIENT_INTERFACE_SHARED)
-		add_library(${PROJECT_NAME} SHARED ${SRCS})
-		if (WITH_LIBRARY_VERSIONING)
-			set_target_properties(${PROJECT_NAME} PROPERTIES VERSION ${FREERDP_VERSION} SOVERSION ${FREERDP_API_VERSION})
-		endif()
-	else()
-		add_library(${PROJECT_NAME} ${SRCS})
-	endif()
-
+if(CLIENT_INTERFACE_SHARED)
+	AddTargetWithResourceFile(${PROJECT_NAME} "SHARED" "${PROJECT_VERSION}" SRCS)
 else()
-	list(APPEND SRCS
-		cli/xfreerdp.c xfreerdp.h
-	)
-	add_executable(${PROJECT_NAME} ${SRCS})
-	set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "xfreerdp")
-	include_directories(..)
+	AddTargetWithResourceFile(${PROJECT_NAME} "STATIC" "${PROJECT_VERSION}" SRCS)
 endif()
+target_include_directories(${PROJECT_NAME} INTERFACE $<INSTALL_INTERFACE:include>)
 
-set(LIBS
+set(PRIV_LIBS
 	${X11_LIBRARIES}
 )
 
-if(WITH_MANPAGES)
-	find_program(XSLTPROC_EXECUTABLE NAMES xsltproc REQUIRED)
-	if (NOT DOCBOOKXSL_FOUND)
-		message(FATAL_ERROR "docbook xsl not found but required for manpage generation")
-	endif()
-
-	# We need the variable ${MAN_TODAY} to contain the current date in ISO
-	# format to replace it in the configure_file step.
-	include(today)
-
-	TODAY(MAN_TODAY)
-
-	configure_file(xfreerdp.1.xml.in xfreerdp.1.xml @ONLY IMMEDIATE)
-
-	# Compile the helper tool with default compiler settings.
-	# We need the include paths though.
-	get_property(dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
-	set(GENERATE_INCLUDES "")
-	foreach(dir ${dirs})
-		set(GENERATE_INCLUDES ${GENERATE_INCLUDES} -I${dir})
-	endforeach(dir)
-
-	add_custom_command(OUTPUT xfreerdp.1
-				COMMAND ${CMAKE_C_COMPILER} ${GENERATE_INCLUDES}
-					${CMAKE_CURRENT_SOURCE_DIR}/generate_argument_docbook.c
-					-o ${CMAKE_CURRENT_BINARY_DIR}/generate_argument_docbook
-				COMMAND ${CMAKE_CURRENT_BINARY_DIR}/generate_argument_docbook
-				COMMAND ${CMAKE_COMMAND} -E copy
-					${CMAKE_CURRENT_SOURCE_DIR}/xfreerdp-channels.1.xml ${CMAKE_CURRENT_BINARY_DIR}
-				COMMAND ${CMAKE_COMMAND} -E copy
-					${CMAKE_CURRENT_SOURCE_DIR}/xfreerdp-examples.1.xml ${CMAKE_CURRENT_BINARY_DIR}
-				COMMAND ${CMAKE_COMMAND} -E copy
-					${CMAKE_CURRENT_SOURCE_DIR}/xfreerdp-envvar.1.xml ${CMAKE_CURRENT_BINARY_DIR}
-				COMMAND ${XSLTPROC_EXECUTABLE} ${DOCBOOKXSL_DIR}/manpages/docbook.xsl xfreerdp.1.xml
-				WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-				DEPENDS
-					${CMAKE_CURRENT_BINARY_DIR}/xfreerdp.1.xml
-					${CMAKE_CURRENT_SOURCE_DIR}/xfreerdp-examples.1.xml
-					${CMAKE_CURRENT_SOURCE_DIR}/xfreerdp-channels.1.xml
-					${CMAKE_CURRENT_SOURCE_DIR}/xfreerdp-envvar.1.xml)
-
-	add_custom_target(xfreerdp.manpage ALL
-		DEPENDS xfreerdp.1)
-
-	install_freerdp_man(${CMAKE_CURRENT_BINARY_DIR}/xfreerdp.1 1)
-endif(WITH_MANPAGES)
+add_subdirectory(man)
 
 find_package(X11 REQUIRED)
 if(X11_XShm_FOUND)
 	add_definitions(-DWITH_XSHM)
 	include_directories(${X11_XShm_INCLUDE_PATH})
-	list(APPEND LIBS
+	list(APPEND PRIV_LIBS
 		${X11_Xext_LIB}
 	)
 endif()
@@ -171,7 +113,7 @@ if (WITH_XINERAMA)
 	if(X11_Xinerama_FOUND)
 		add_definitions(-DWITH_XINERAMA)
 		include_directories(${X11_Xinerama_INCLUDE_PATH})
-		list(APPEND LIBS
+		list(APPEND PRIV_LIBS
 			${X11_Xinerama_LIB}
 		)
 	endif()
@@ -182,7 +124,7 @@ if (WITH_XEXT)
 	find_package(X11 REQUIRED)
 	if(X11_Xext_FOUND)
 		add_definitions(-DWITH_XEXT)
-		list(APPEND LIBS
+		list(APPEND PRIV_LIBS
 			${X11_Xext_LIB}
 		)
 	endif()
@@ -194,7 +136,7 @@ if (WITH_XCURSOR)
 	if(X11_Xcursor_FOUND)
 		add_definitions(-DWITH_XCURSOR)
 		include_directories(${X11_Xcursor_INCLUDE_PATH})
-		list(APPEND LIBS
+		list(APPEND PRIV_LIBS
 			${X11_Xcursor_LIB}
 		)
 	endif()
@@ -206,7 +148,7 @@ if (WITH_XV)
 	if(X11_Xv_FOUND)
 		add_definitions(-DWITH_XV)
 		include_directories(${X11_Xv_INCLUDE_PATH})
-		list(APPEND LIBS
+		list(APPEND PRIV_LIBS
 			${X11_Xv_LIB}
 		)
 	endif()
@@ -218,7 +160,7 @@ if (WITH_XI)
 	if(X11_Xi_FOUND)
 		add_definitions(-DWITH_XI)
 		include_directories(${X11_Xi_INCLUDE_PATH})
-		list(APPEND LIBS
+		list(APPEND PRIV_LIBS
 			${X11_Xi_LIB}
 		)
 	endif()
@@ -230,7 +172,7 @@ if(WITH_XRENDER)
 	if(X11_Xrender_FOUND)
 		add_definitions(-DWITH_XRENDER)
 		include_directories(${X11_Xrender_INCLUDE_PATH})
-		list(APPEND LIBS
+		list(APPEND PRIV_LIBS
 			${X11_Xrender_LIB}
 		)
 	endif()
@@ -242,7 +184,7 @@ if (WITH_XRANDR)
 	if(X11_Xrandr_FOUND)
 		add_definitions(-DWITH_XRANDR)
 		include_directories(${X11_Xrandr_INCLUDE_PATH})
-		list(APPEND LIBS
+		list(APPEND PRIV_LIBS
 			${X11_Xrandr_LIB}
 		)
 	endif()
@@ -254,7 +196,7 @@ if (WITH_XFIXES)
 	if(X11_Xfixes_FOUND)
 		add_definitions(-DWITH_XFIXES)
 		include_directories(${X11_Xfixes_INCLUDE_PATH})
-		list(APPEND LIBS
+		list(APPEND PRIV_LIBS
 			${X11_Xfixes_LIB}
 		)
 	endif()
@@ -262,27 +204,23 @@ endif()
 
 include_directories(${PROJECT_SOURCE_DIR}/resources)
 
-list(APPEND LIBS
+list(APPEND PUB_LIBS
 	freerdp-client
-	freerdp
+)
+
+list(APPEND PRIV_LIBS
 	m
 )
 if (NOT APPLE)
-	list(APPEND LIBS rt)
+	list(APPEND PRIV_LIBS rt)
 endif()
-target_link_libraries(${PROJECT_NAME} PRIVATE ${LIBS})
+target_link_libraries(${PROJECT_NAME} PUBLIC ${PUB_LIBS})
+target_link_libraries(${PROJECT_NAME} PRIVATE ${PRIV_LIBS})
 
-if(WITH_IPP)
-	target_link_libraries(${PROJECT_NAME} PRIVATE ${IPP_LIBRARY_LIST})
-endif()
-
-option(WITH_CLIENT_INTERFACE "Build clients as a library with an interface" OFF)
 if(WITH_CLIENT_INTERFACE)
 	install(TARGETS ${PROJECT_NAME} DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT libraries)
-	add_subdirectory(cli)
-else()
-	install(TARGETS ${PROJECT_NAME} DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client)
 endif()
+add_subdirectory(cli)
 
 set_property(TARGET ${PROJECT_NAME} PROPERTY FOLDER "Client/X11")
 

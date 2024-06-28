@@ -18,17 +18,14 @@
  */
 
 #include <winpr/config.h>
+#include <winpr/platform.h>
 
-#if defined(__clang__)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wreserved-id-macro"
-#endif
+WINPR_PRAGMA_DIAG_PUSH
+WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 
 #define _FILE_OFFSET_BITS 64
 
-#if defined(__clang__)
-#pragma clang diagnostic pop
-#endif
+WINPR_PRAGMA_DIAG_POP
 
 #include <errno.h>
 
@@ -41,6 +38,7 @@
 #include <winpr/shell.h>
 #include <winpr/string.h>
 #include <winpr/wlog.h>
+#include <winpr/path.h>
 #include <winpr/print.h>
 
 #include "clipboard.h"
@@ -76,7 +74,7 @@ static struct synthetic_file* make_synthetic_file(const WCHAR* local_name, const
 {
 	struct synthetic_file* file = NULL;
 	WIN32_FIND_DATAW fd = { 0 };
-	HANDLE hFind;
+	HANDLE hFind = NULL;
 
 	WINPR_ASSERT(local_name);
 	WINPR_ASSERT(remote_name);
@@ -104,11 +102,7 @@ static struct synthetic_file* make_synthetic_file(const WCHAR* local_name, const
 		goto fail;
 
 	const size_t len = _wcslen(file->remote_name);
-	for (size_t x = 0; x < len; x++)
-	{
-		if (file->remote_name[x] == '/')
-			file->remote_name[x] = '\\';
-	}
+	PathCchConvertStyleW(file->remote_name, len, PATH_STYLE_WINDOWS);
 
 	file->dwFileAttributes = fd.dwFileAttributes;
 	file->ftCreationTime = fd.ftCreationTime;
@@ -135,83 +129,6 @@ void free_synthetic_file(struct synthetic_file* file)
 	free(file->local_name);
 	free(file->remote_name);
 	free(file);
-}
-
-static unsigned char hex_to_dec(char c, BOOL* valid)
-{
-	WINPR_ASSERT(valid);
-
-	if (('0' <= c) && (c <= '9'))
-		return (c - '0');
-
-	if (('a' <= c) && (c <= 'f'))
-		return (c - 'a') + 10;
-
-	if (('A' <= c) && (c <= 'F'))
-		return (c - 'A') + 10;
-
-	*valid = FALSE;
-	return 0;
-}
-
-static BOOL decode_percent_encoded_byte(const char* str, const char* end, char* value)
-{
-	BOOL valid = TRUE;
-
-	WINPR_ASSERT(str);
-	WINPR_ASSERT(end);
-	WINPR_ASSERT(value);
-
-	if ((end < str) || ((size_t)(end - str) < strlen("%20")))
-		return FALSE;
-
-	*value = 0;
-	*value |= hex_to_dec(str[1], &valid);
-	*value <<= 4;
-	*value |= hex_to_dec(str[2], &valid);
-	return valid;
-}
-
-static char* decode_percent_encoded_string(const char* str, size_t len)
-{
-	char* buffer = NULL;
-	char* next = NULL;
-	const char* cur = str;
-	const char* lim = str + len;
-
-	WINPR_ASSERT(str);
-
-	/* Percent decoding shrinks data length, so len bytes will be enough. */
-	buffer = calloc(len + 1, sizeof(char));
-
-	if (!buffer)
-		return NULL;
-
-	next = buffer;
-
-	while (cur < lim)
-	{
-		if (*cur != '%')
-		{
-			*next++ = *cur++;
-		}
-		else
-		{
-			if (!decode_percent_encoded_byte(cur, lim, next))
-			{
-				WLog_ERR(TAG, "invalid percent encoding");
-				goto error;
-			}
-
-			cur += strlen("%20");
-			next += 1;
-		}
-	}
-
-	return buffer;
-error:
-	free(buffer);
-	return NULL;
 }
 
 /*
@@ -283,8 +200,10 @@ static BOOL add_directory_entry_to_list(wClipboard* clipboard, const WCHAR* loca
 	WCHAR* remote_name = NULL;
 	WCHAR* remote_base_name = NULL;
 
-	const WCHAR dot[2] = { '.', '\0' };
-	const WCHAR dotdot[3] = { '.', '.', '\0' };
+	WCHAR dotbuffer[6] = { 0 };
+	WCHAR dotdotbuffer[6] = { 0 };
+	const WCHAR* dot = InitializeConstWCharFromUtf8(".", dotbuffer, ARRAYSIZE(dotbuffer));
+	const WCHAR* dotdot = InitializeConstWCharFromUtf8("..", dotdotbuffer, ARRAYSIZE(dotdotbuffer));
 
 	WINPR_ASSERT(clipboard);
 	WINPR_ASSERT(local_dir_name);
@@ -315,33 +234,39 @@ static BOOL add_directory_entry_to_list(wClipboard* clipboard, const WCHAR* loca
 }
 
 static BOOL do_add_directory_contents_to_list(wClipboard* clipboard, const WCHAR* local_name,
-                                              const WCHAR* remote_name, HANDLE hFind,
+                                              const WCHAR* remote_name, WCHAR* namebuf,
                                               wArrayList* files)
 {
 	WINPR_ASSERT(clipboard);
 	WINPR_ASSERT(local_name);
 	WINPR_ASSERT(remote_name);
 	WINPR_ASSERT(files);
+	WINPR_ASSERT(namebuf);
 
+	WIN32_FIND_DATAW FindData = { 0 };
+	HANDLE hFind = FindFirstFileW(namebuf, &FindData);
 	if (INVALID_HANDLE_VALUE == hFind)
 	{
+		WLog_ERR(TAG, "FindFirstFile failed (%" PRIu32 ")", GetLastError());
 		return FALSE;
 	}
-
 	while (TRUE)
 	{
-		WIN32_FIND_DATAW FileData = { 0 };
-		BOOL bRet = FindNextFileW(hFind, &FileData);
+		if (!add_directory_entry_to_list(clipboard, local_name, remote_name, &FindData, files))
+		{
+			FindClose(hFind);
+			return FALSE;
+		}
+
+		BOOL bRet = FindNextFileW(hFind, &FindData);
 		if (!bRet)
 		{
+			FindClose(hFind);
 			if (ERROR_NO_MORE_FILES == GetLastError())
 				return TRUE;
 			WLog_WARN(TAG, "FindNextFile failed (%" PRIu32 ")", GetLastError());
 			return FALSE;
 		}
-
-		if (!add_directory_entry_to_list(clipboard, local_name, remote_name, &FileData, files))
-			return FALSE;
 	}
 
 	return TRUE;
@@ -351,9 +276,14 @@ static BOOL add_directory_contents_to_list(wClipboard* clipboard, const WCHAR* l
                                            const WCHAR* remote_name, wArrayList* files)
 {
 	BOOL result = FALSE;
-	HANDLE hFind = NULL;
-	WIN32_FIND_DATAW FindData = { 0 };
-	const WCHAR wildcard[] = { '/', '*', '\0' };
+	union
+	{
+		const char* c;
+		const WCHAR* w;
+	} wildcard;
+	const char buffer[6] = "/\0*\0\0\0";
+	wildcard.c = buffer;
+	const size_t wildcardLen = ARRAYSIZE(buffer) / sizeof(WCHAR);
 
 	WINPR_ASSERT(clipboard);
 	WINPR_ASSERT(local_name);
@@ -361,25 +291,16 @@ static BOOL add_directory_contents_to_list(wClipboard* clipboard, const WCHAR* l
 	WINPR_ASSERT(files);
 
 	size_t len = _wcslen(local_name);
-	WCHAR* namebuf = calloc(len + ARRAYSIZE(wildcard), sizeof(WCHAR));
+	WCHAR* namebuf = calloc(len + wildcardLen, sizeof(WCHAR));
 	if (!namebuf)
 		return FALSE;
 
-	memcpy(namebuf, local_name, len * sizeof(WCHAR));
-	memcpy(&namebuf[len], wildcard, sizeof(wildcard));
+	_wcsncat(namebuf, local_name, len);
+	_wcsncat(namebuf, wildcard.w, wildcardLen);
 
-	hFind = FindFirstFileW(namebuf, &FindData);
+	result = do_add_directory_contents_to_list(clipboard, local_name, remote_name, namebuf, files);
+
 	free(namebuf);
-
-	if (hFind == INVALID_HANDLE_VALUE)
-	{
-		WLog_ERR(TAG, "FindFirstFile failed (%" PRIu32 ")", GetLastError());
-		return FALSE;
-	}
-
-	result = do_add_directory_contents_to_list(clipboard, local_name, remote_name, hFind, files);
-
-	FindClose(hFind);
 	return result;
 }
 
@@ -393,7 +314,6 @@ static BOOL add_file_to_list(wClipboard* clipboard, const WCHAR* local_name,
 	WINPR_ASSERT(remote_name);
 	WINPR_ASSERT(files);
 
-	WLog_VRB(TAG, "adding file: %s", local_name);
 	file = make_synthetic_file(local_name, remote_name);
 
 	if (!file)
@@ -466,16 +386,10 @@ static BOOL process_uri(wClipboard* clipboard, const char* uri, size_t uri_len)
 	// URI is specified by RFC 8089: https://datatracker.ietf.org/doc/html/rfc8089
 	BOOL result = FALSE;
 	char* name = NULL;
-	char* localName = NULL;
 
 	WINPR_ASSERT(clipboard);
 
-	localName = parse_uri_to_local_file(uri, uri_len);
-	if (localName)
-	{
-		name = decode_percent_encoded_string(localName, strlen(localName));
-		free(localName);
-	}
+	name = parse_uri_to_local_file(uri, uri_len);
 	if (name)
 	{
 		WCHAR* wname = NULL;
@@ -501,8 +415,6 @@ static BOOL process_uri_list(wClipboard* clipboard, const char* data, size_t len
 {
 	const char* cur = data;
 	const char* lim = data + length;
-	const char* start = NULL;
-	const char* stop = NULL;
 
 	WINPR_ASSERT(clipboard);
 	WINPR_ASSERT(data);
@@ -521,9 +433,10 @@ static BOOL process_uri_list(wClipboard* clipboard, const char* data, size_t len
 	while (cur < lim)
 	{
 		BOOL comment = (*cur == '#');
-		start = cur;
+		const char* start = cur;
+		const char* stop = cur;
 
-		for (stop = cur; stop < lim; stop++)
+		for (; stop < lim; stop++)
 		{
 			if (*stop == '\r')
 			{
@@ -598,7 +511,6 @@ static BOOL convert_local_file_to_filedescriptor(const struct synthetic_file* fi
 
 static FILEDESCRIPTORW* convert_local_file_list_to_filedescriptors(wArrayList* files)
 {
-	size_t i;
 	size_t count = 0;
 	FILEDESCRIPTORW* descriptors = NULL;
 
@@ -609,7 +521,7 @@ static FILEDESCRIPTORW* convert_local_file_list_to_filedescriptors(wArrayList* f
 	if (!descriptors)
 		goto error;
 
-	for (i = 0; i < count; i++)
+	for (size_t i = 0; i < count; i++)
 	{
 		const struct synthetic_file* file = ArrayList_GetItem(files, i);
 
@@ -626,7 +538,7 @@ error:
 static void* convert_any_uri_list_to_filedescriptors(wClipboard* clipboard, UINT32 formatId,
                                                      UINT32* pSize)
 {
-	FILEDESCRIPTORW* descriptors;
+	FILEDESCRIPTORW* descriptors = NULL;
 
 	WINPR_ASSERT(clipboard);
 	WINPR_ASSERT(pSize);
@@ -787,15 +699,25 @@ static void* convert_filedescriptors_to_file_list(wClipboard* clipboard, UINT32 
                                                   const char* header, const char* lineprefix,
                                                   const char* lineending, BOOL skip_last_lineending)
 {
-	const WCHAR backslash = '\\';
+	union
+	{
+		char c[2];
+		WCHAR w;
+	} backslash;
+	backslash.c[0] = '\\';
+	backslash.c[1] = '\0';
+
 	const FILEDESCRIPTORW* descriptors = NULL;
 	UINT32 nrDescriptors = 0;
-	size_t count, x, alloc, pos, baseLength = 0;
-	char* dst;
+	size_t count = 0;
+	size_t alloc = 0;
+	size_t pos = 0;
+	size_t baseLength = 0;
+	char* dst = NULL;
 	size_t header_len = strlen(header);
 	size_t lineprefix_len = strlen(lineprefix);
 	size_t lineending_len = strlen(lineending);
-	size_t decoration_len;
+	size_t decoration_len = 0;
 
 	if (!clipboard || !data || !pSize)
 		return NULL;
@@ -821,7 +743,7 @@ static void* convert_filedescriptors_to_file_list(wClipboard* clipboard, UINT32 
 	if ((count < 1) || (count != nrDescriptors))
 		return NULL;
 
-	descriptors = (const FILEDESCRIPTORW*)Stream_Pointer(s);
+	descriptors = Stream_ConstPointer(s);
 
 	if (formatId != ClipboardGetFormatId(clipboard, mime_FileGroupDescriptorW))
 		return NULL;
@@ -831,11 +753,11 @@ static void* convert_filedescriptors_to_file_list(wClipboard* clipboard, UINT32 
 	alloc = header_len;
 
 	/* Get total size of file/folder names under first level folder only */
-	for (x = 0; x < count; x++)
+	for (size_t x = 0; x < count; x++)
 	{
 		const FILEDESCRIPTORW* dsc = &descriptors[x];
 
-		if (_wcschr(dsc->cFileName, backslash) == NULL)
+		if (_wcschr(dsc->cFileName, backslash.w) == NULL)
 		{
 			alloc += ARRAYSIZE(dsc->cFileName) *
 			         8; /* Overallocate, just take the biggest value the result path can have */
@@ -857,11 +779,11 @@ static void* convert_filedescriptors_to_file_list(wClipboard* clipboard, UINT32 
 
 	pos = header_len;
 
-	for (x = 0; x < count; x++)
+	for (size_t x = 0; x < count; x++)
 	{
 		const FILEDESCRIPTORW* dsc = &descriptors[x];
 		BOOL fail = TRUE;
-		if (_wcschr(dsc->cFileName, backslash) != NULL)
+		if (_wcschr(dsc->cFileName, backslash.w) != NULL)
 		{
 			continue;
 		}
@@ -1014,7 +936,7 @@ static void array_free_synthetic_file(void* the_file)
 
 static BOOL register_file_formats_and_synthesizers(wClipboard* clipboard)
 {
-	wObject* obj;
+	wObject* obj = NULL;
 
 	/*
 	    1. Gnome Nautilus based file manager (Nautilus only with version >= 3.30 AND < 40):
@@ -1163,7 +1085,6 @@ static UINT file_get_range(struct synthetic_file* file, UINT64 offset, UINT32 si
 	UINT error = NO_ERROR;
 	DWORD dwLow = 0;
 	DWORD dwHigh = 0;
-	BYTE* buffer = NULL;
 
 	WINPR_ASSERT(file);
 	WINPR_ASSERT(actual_data);
@@ -1184,8 +1105,8 @@ static UINT file_get_range(struct synthetic_file* file, UINT64 offset, UINT32 si
 
 		if (!GetFileInformationByHandle(file->fd, &FileInfo))
 		{
-			file->fd = INVALID_HANDLE_VALUE;
 			CloseHandle(file->fd);
+			file->fd = INVALID_HANDLE_VALUE;
 			error = GetLastError();
 			WLog_ERR(TAG, "Get file [%s] information fail: 0x%08" PRIx32, file->local_name, error);
 			return error;
@@ -1234,7 +1155,7 @@ static UINT file_get_range(struct synthetic_file* file, UINT64 offset, UINT32 si
 			}
 		}
 
-		buffer = malloc(size);
+		BYTE* buffer = malloc(size);
 		if (!buffer)
 		{
 			error = ERROR_NOT_ENOUGH_MEMORY;
@@ -1242,6 +1163,7 @@ static UINT file_get_range(struct synthetic_file* file, UINT64 offset, UINT32 si
 		}
 		if (!ReadFile(file->fd, buffer, size, (LPDWORD)actual_size, NULL))
 		{
+			free(buffer);
 			error = GetLastError();
 			break;
 		}
@@ -1252,10 +1174,6 @@ static UINT file_get_range(struct synthetic_file* file, UINT64 offset, UINT32 si
 		         *actual_size, file->offset);
 	} while (0);
 
-	if (NO_ERROR != error)
-	{
-		free(buffer);
-	}
 	synthetic_file_read_close(file, TRUE /* (error != NO_ERROR) && (size > 0) */);
 	return error;
 }

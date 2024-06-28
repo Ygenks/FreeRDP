@@ -72,10 +72,9 @@ char* freerdp_passphrase_read(rdpContext* context, const char* prompt, char* buf
 #include <sys/stat.h>
 #include <termios.h>
 #include <unistd.h>
-#include <termios.h>
 #include <freerdp/utils/signal.h>
 
-#ifdef WINPR_HAVE_POLL_H
+#if defined(WINPR_HAVE_POLL_H) && !defined(__APPLE__)
 #include <poll.h>
 #else
 #include <time.h>
@@ -84,8 +83,8 @@ char* freerdp_passphrase_read(rdpContext* context, const char* prompt, char* buf
 
 static int wait_for_fd(int fd, int timeout)
 {
-	int status;
-#ifdef WINPR_HAVE_POLL_H
+	int status = 0;
+#if defined(WINPR_HAVE_POLL_H) && !defined(__APPLE__)
 	struct pollfd pollset = { 0 };
 	pollset.fd = fd;
 	pollset.events = POLLIN;
@@ -100,7 +99,7 @@ static int wait_for_fd(int fd, int timeout)
 	fd_set rset = { 0 };
 	struct timeval tv = { 0 };
 	FD_ZERO(&rset);
-	FD_SET(sockfd, &rset);
+	FD_SET(fd, &rset);
 
 	if (timeout)
 	{
@@ -110,7 +109,7 @@ static int wait_for_fd(int fd, int timeout)
 
 	do
 	{
-		status = select(sockfd + 1, &rset, NULL, NULL, timeout ? &tv : NULL);
+		status = select(fd + 1, &rset, NULL, NULL, timeout ? &tv : NULL);
 	} while ((status < 0) && (errno == EINTR));
 
 #endif
@@ -121,7 +120,7 @@ static void replace_char(char* buffer, size_t buffer_len, const char* toreplace)
 {
 	while (*toreplace != '\0')
 	{
-		char* ptr;
+		char* ptr = NULL;
 		while ((ptr = strrchr(buffer, *toreplace)) != NULL)
 			*ptr = '\0';
 		toreplace++;
@@ -133,7 +132,7 @@ char* freerdp_passphrase_read(rdpContext* context, const char* prompt, char* buf
 {
 	BOOL terminal_needs_reset = FALSE;
 	char term_name[L_ctermid] = { 0 };
-	int term_file;
+	int term_file = 0;
 
 	FILE* fout = NULL;
 
@@ -144,7 +143,7 @@ char* freerdp_passphrase_read(rdpContext* context, const char* prompt, char* buf
 	}
 
 	ctermid(term_name);
-	int terminal_fildes;
+	int terminal_fildes = 0;
 	if (from_stdin || strcmp(term_name, "") == 0 || (term_file = open(term_name, O_RDWR)) == -1)
 	{
 		fout = stdout;
@@ -255,8 +254,8 @@ int freerdp_interruptible_getc(rdpContext* context, FILE* f)
 SSIZE_T freerdp_interruptible_get_line(rdpContext* context, char** plineptr, size_t* psize,
                                        FILE* stream)
 {
-	char c;
-	char* n;
+	int c = 0;
+	char* n = NULL;
 	size_t step = 32;
 	size_t used = 0;
 	char* ptr = NULL;
@@ -285,7 +284,7 @@ SSIZE_T freerdp_interruptible_get_line(rdpContext* context, char** plineptr, siz
 
 		c = freerdp_interruptible_getc(context, stream);
 		if (c != EOF)
-			ptr[used++] = c;
+			ptr[used++] = (char)c;
 	} while ((c != '\n') && (c != '\r') && (c != EOF));
 
 	ptr[used] = '\0';

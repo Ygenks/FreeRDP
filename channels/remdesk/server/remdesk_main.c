@@ -36,7 +36,7 @@
  */
 static UINT remdesk_virtual_channel_write(RemdeskServerContext* context, wStream* s)
 {
-	BOOL status;
+	BOOL status = 0;
 	ULONG BytesWritten = 0;
 	status = WTSVirtualChannelWrite(context->priv->ChannelHandle, (PCHAR)Stream_Buffer(s),
 	                                Stream_Length(s), &BytesWritten);
@@ -50,7 +50,7 @@ static UINT remdesk_virtual_channel_write(RemdeskServerContext* context, wStream
  */
 static UINT remdesk_read_channel_header(wStream* s, REMDESK_CHANNEL_HEADER* header)
 {
-	UINT32 ChannelNameLen;
+	UINT32 ChannelNameLen = 0;
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 8))
 		return CHANNEL_RC_NO_MEMORY;
@@ -85,11 +85,10 @@ static UINT remdesk_read_channel_header(wStream* s, REMDESK_CHANNEL_HEADER* head
  */
 static UINT remdesk_write_channel_header(wStream* s, REMDESK_CHANNEL_HEADER* header)
 {
-	int index;
-	UINT32 ChannelNameLen;
+	UINT32 ChannelNameLen = 0;
 	WCHAR ChannelNameW[32] = { 0 };
 
-	for (index = 0; index < 32; index++)
+	for (size_t index = 0; index < 32; index++)
 	{
 		ChannelNameW[index] = (WCHAR)header->ChannelName[index];
 	}
@@ -108,7 +107,7 @@ static UINT remdesk_write_channel_header(wStream* s, REMDESK_CHANNEL_HEADER* hea
  */
 static UINT remdesk_write_ctl_header(wStream* s, REMDESK_CTL_HEADER* ctlHeader)
 {
-	UINT error;
+	UINT error = 0;
 
 	if ((error = remdesk_write_channel_header(s, (REMDESK_CHANNEL_HEADER*)ctlHeader)))
 	{
@@ -142,9 +141,9 @@ static UINT remdesk_prepare_ctl_header(REMDESK_CTL_HEADER* ctlHeader, UINT32 msg
  */
 static UINT remdesk_send_ctl_result_pdu(RemdeskServerContext* context, UINT32 result)
 {
-	wStream* s;
+	wStream* s = NULL;
 	REMDESK_CTL_RESULT_PDU pdu;
-	UINT error;
+	UINT error = 0;
 	pdu.result = result;
 
 	if ((error = remdesk_prepare_ctl_header(&(pdu.ctlHeader), REMDESK_CTL_RESULT, 4)))
@@ -185,9 +184,9 @@ out:
  */
 static UINT remdesk_send_ctl_version_info_pdu(RemdeskServerContext* context)
 {
-	wStream* s;
+	wStream* s = NULL;
 	REMDESK_CTL_VERSION_INFO_PDU pdu;
-	UINT error;
+	UINT error = 0;
 
 	if ((error = remdesk_prepare_ctl_header(&(pdu.ctlHeader), REMDESK_CTL_VERSIONINFO, 8)))
 	{
@@ -231,8 +230,8 @@ out:
 static UINT remdesk_recv_ctl_version_info_pdu(RemdeskServerContext* context, wStream* s,
                                               REMDESK_CHANNEL_HEADER* header)
 {
-	UINT32 versionMajor;
-	UINT32 versionMinor;
+	UINT32 versionMajor = 0;
+	UINT32 versionMinor = 0;
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 8))
 		return ERROR_INVALID_DATA;
@@ -257,17 +256,13 @@ static UINT remdesk_recv_ctl_version_info_pdu(RemdeskServerContext* context, wSt
 static UINT remdesk_recv_ctl_remote_control_desktop_pdu(RemdeskServerContext* context, wStream* s,
                                                         REMDESK_CHANNEL_HEADER* header)
 {
-	SSIZE_T cchStringW;
-	WCHAR* pStringW;
-	UINT32 msgLength;
+	SSIZE_T cchStringW = 0;
 	SSIZE_T cbRaConnectionStringW = 0;
-	WCHAR* raConnectionStringW = NULL;
-	REMDESK_CTL_REMOTE_CONTROL_DESKTOP_PDU pdu;
-	UINT error;
-	msgLength = header->DataLength - 4;
-	pStringW = (WCHAR*)Stream_Pointer(s);
-	raConnectionStringW = pStringW;
-	cchStringW = 0;
+	REMDESK_CTL_REMOTE_CONTROL_DESKTOP_PDU pdu = { 0 };
+	UINT error = 0;
+	UINT32 msgLength = header->DataLength - 4;
+	const WCHAR* pStringW = Stream_ConstPointer(s);
+	const WCHAR* raConnectionStringW = pStringW;
 
 	while ((msgLength > 0) && pStringW[cchStringW])
 	{
@@ -302,18 +297,15 @@ static UINT remdesk_recv_ctl_remote_control_desktop_pdu(RemdeskServerContext* co
 static UINT remdesk_recv_ctl_authenticate_pdu(RemdeskServerContext* context, wStream* s,
                                               REMDESK_CHANNEL_HEADER* header)
 {
-	int cchStringW;
-	WCHAR* pStringW;
-	UINT32 msgLength;
+	int cchStringW = 0;
+	UINT32 msgLength = 0;
 	int cbExpertBlobW = 0;
-	WCHAR* expertBlobW = NULL;
+	const WCHAR* expertBlobW = NULL;
 	int cbRaConnectionStringW = 0;
-	WCHAR* raConnectionStringW = NULL;
-	REMDESK_CTL_AUTHENTICATE_PDU pdu;
+	REMDESK_CTL_AUTHENTICATE_PDU pdu = { 0 };
 	msgLength = header->DataLength - 4;
-	pStringW = (WCHAR*)Stream_Pointer(s);
-	raConnectionStringW = pStringW;
-	cchStringW = 0;
+	const WCHAR* pStringW = Stream_ConstPointer(s);
+	const WCHAR* raConnectionStringW = pStringW;
 
 	while ((msgLength > 0) && pStringW[cchStringW])
 	{
@@ -368,14 +360,13 @@ static UINT remdesk_recv_ctl_verify_password_pdu(RemdeskServerContext* context, 
                                                  REMDESK_CHANNEL_HEADER* header)
 {
 	SSIZE_T cbExpertBlobW = 0;
-	WCHAR* expertBlobW = NULL;
 	REMDESK_CTL_VERIFY_PASSWORD_PDU pdu;
-	UINT error;
+	UINT error = 0;
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 8))
 		return ERROR_INVALID_DATA;
 
-	expertBlobW = (WCHAR*)Stream_Pointer(s);
+	const WCHAR* expertBlobW = Stream_ConstPointer(s);
 	cbExpertBlobW = header->DataLength - 4;
 
 	pdu.expertBlob = ConvertWCharNToUtf8Alloc(expertBlobW, cbExpertBlobW / sizeof(WCHAR), NULL);
@@ -489,7 +480,7 @@ static UINT remdesk_server_receive_pdu(RemdeskServerContext* context, wStream* s
 	REMDESK_CHANNEL_HEADER header;
 #if 0
 	WLog_INFO(TAG, "RemdeskReceive: %"PRIuz"", Stream_GetRemainingLength(s));
-	winpr_HexDump(Stream_Pointer(s), Stream_GetRemainingLength(s));
+	winpr_HexDump(WCHAR* expertBlobW = NULL;(s), Stream_GetRemainingLength(s));
 #endif
 
 	if ((error = remdesk_read_channel_header(s, &header)))
@@ -530,17 +521,17 @@ static UINT remdesk_server_receive_pdu(RemdeskServerContext* context, wStream* s
 
 static DWORD WINAPI remdesk_server_thread(LPVOID arg)
 {
-	wStream* s;
-	DWORD status;
-	DWORD nCount;
-	void* buffer;
-	UINT32* pHeader;
-	UINT32 PduLength;
+	wStream* s = NULL;
+	DWORD status = 0;
+	DWORD nCount = 0;
+	void* buffer = NULL;
+	UINT32* pHeader = NULL;
+	UINT32 PduLength = 0;
 	HANDLE events[8];
-	HANDLE ChannelEvent;
-	DWORD BytesReturned;
-	RemdeskServerContext* context;
-	UINT error;
+	HANDLE ChannelEvent = NULL;
+	DWORD BytesReturned = 0;
+	RemdeskServerContext* context = NULL;
+	UINT error = 0;
 	context = (RemdeskServerContext*)arg;
 	buffer = NULL;
 	BytesReturned = 0;
@@ -693,7 +684,7 @@ static UINT remdesk_server_start(RemdeskServerContext* context)
  */
 static UINT remdesk_server_stop(RemdeskServerContext* context)
 {
-	UINT error;
+	UINT error = 0;
 	SetEvent(context->priv->StopEvent);
 
 	if (WaitForSingleObject(context->priv->Thread, INFINITE) == WAIT_FAILED)
@@ -710,7 +701,7 @@ static UINT remdesk_server_stop(RemdeskServerContext* context)
 
 RemdeskServerContext* remdesk_server_context_new(HANDLE vcm)
 {
-	RemdeskServerContext* context;
+	RemdeskServerContext* context = NULL;
 	context = (RemdeskServerContext*)calloc(1, sizeof(RemdeskServerContext));
 
 	if (context)

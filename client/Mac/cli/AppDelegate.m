@@ -7,9 +7,9 @@
 //
 
 #import "AppDelegate.h"
-#import "MacFreeRDP/mfreerdp.h"
-#import "MacFreeRDP/mf_client.h"
-#import "MacFreeRDP/MRDPView.h"
+#import <mfreerdp.h>
+#import <mf_client.h>
+#import <MRDPView.h>
 
 #import <winpr/assert.h>
 #import <freerdp/client/cmdline.h>
@@ -111,6 +111,11 @@ void mac_set_view_size(rdpContext *context, MRDPView *view);
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender
+{
+	return YES;
+}
+
+- (BOOL)applicationSupportsSecureRestorableState:(NSApplication *)app
 {
 	return YES;
 }

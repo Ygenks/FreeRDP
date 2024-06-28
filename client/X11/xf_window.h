@@ -22,6 +22,7 @@
 
 #include <X11/Xlib.h>
 
+#include <winpr/platform.h>
 #include <freerdp/freerdp.h>
 #include <freerdp/gdi/gfx.h>
 
@@ -35,10 +36,8 @@ typedef struct xf_window xfWindow;
 #include "xfreerdp.h"
 
 // Extended ICCM flags http://standards.freedesktop.org/wm-spec/wm-spec-latest.html
-#if defined(__clang__)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wreserved-id-macro"
-#endif
+WINPR_PRAGMA_DIAG_PUSH
+WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 
 #define _NET_WM_MOVERESIZE_SIZE_TOPLEFT 0
 #define _NET_WM_MOVERESIZE_SIZE_TOP 1
@@ -57,9 +56,7 @@ typedef struct xf_window xfWindow;
 #define _NET_WM_STATE_ADD 1    /* add/set property */
 #define _NET_WM_STATE_TOGGLE 2 /* toggle property */
 
-#if defined(__clang__)
-#pragma clang diagnostic pop
-#endif
+WINPR_PRAGMA_DIAG_POP
 
 enum xf_localmove_state
 {
@@ -195,6 +192,7 @@ void xf_SetWindowRects(xfContext* xfc, xfAppWindow* appWindow, RECTANGLE_16* rec
 void xf_SetWindowVisibilityRects(xfContext* xfc, xfAppWindow* appWindow, UINT32 rectsOffsetX,
                                  UINT32 rectsOffsetY, RECTANGLE_16* rects, int nrects);
 void xf_SetWindowStyle(xfContext* xfc, xfAppWindow* appWindow, UINT32 style, UINT32 ex_style);
+void xf_SetWindowActions(xfContext* xfc, xfAppWindow* appWindow);
 void xf_UpdateWindowArea(xfContext* xfc, xfAppWindow* appWindow, int x, int y, int width,
                          int height);
 UINT xf_AppUpdateWindowFromSurface(xfContext* xfc, gdiGfxSurface* surface);

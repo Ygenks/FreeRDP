@@ -36,6 +36,7 @@
 
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
+#include <openssl/bn.h>
 
 #include "cert_common.h"
 #include "crypto.h"
@@ -53,6 +54,7 @@ BOOL read_bignum(BYTE** dst, UINT32* length, const BIGNUM* num, BOOL alloc)
 
 	if (alloc)
 	{
+		free(*dst);
 		*dst = NULL;
 		*length = 0;
 	}
@@ -142,7 +144,10 @@ BOOL cert_info_allocate(rdpCertInfo* info, size_t size)
 	info->Modulus = (BYTE*)malloc(size);
 
 	if (!info->Modulus && (size > 0))
+	{
+		WLog_ERR(TAG, "Failed to allocate info->Modulus of size %" PRIuz, size);
 		return FALSE;
+	}
 	info->ModulusLength = (UINT32)size;
 	return TRUE;
 }
@@ -152,7 +157,10 @@ BOOL cert_info_read_modulus(rdpCertInfo* info, size_t size, wStream* s)
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, size))
 		return FALSE;
 	if (size > UINT32_MAX)
+	{
+		WLog_ERR(TAG, "modulus size %" PRIuz " exceeds limit of %" PRIu32, size, UINT32_MAX);
 		return FALSE;
+	}
 	if (!cert_info_allocate(info, size))
 		return FALSE;
 	Stream_Read(s, info->Modulus, info->ModulusLength);
@@ -164,9 +172,15 @@ BOOL cert_info_read_exponent(rdpCertInfo* info, size_t size, wStream* s)
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, size))
 		return FALSE;
 	if (size > 4)
+	{
+		WLog_ERR(TAG, "exponent size %" PRIuz " exceeds limit of %" PRIu32, size, 4);
 		return FALSE;
+	}
 	if (!info->Modulus || (info->ModulusLength == 0))
+	{
+		WLog_ERR(TAG, "invalid modulus=%p [%" PRIu32 "]", info->Modulus, info->ModulusLength);
 		return FALSE;
+	}
 	Stream_Read(s, &info->exponent[4 - size], size);
 	crypto_reverse(info->Modulus, info->ModulusLength);
 	crypto_reverse(info->exponent, 4);
@@ -178,7 +192,13 @@ X509* x509_from_rsa(const RSA* rsa)
 {
 	EVP_PKEY* pubkey = NULL;
 	X509* x509 = NULL;
-	BIO* bio = BIO_new(BIO_s_secmem());
+	BIO* bio = BIO_new(
+#if defined(LIBRESSL_VERSION_NUMBER)
+	    BIO_s_mem()
+#else
+	    BIO_s_secmem()
+#endif
+	);
 	if (!bio)
 		return NULL;
 

@@ -21,6 +21,8 @@
 #error "This file must only be included with MIT kerberos"
 #endif
 
+#include <string.h>
+
 #include <winpr/path.h>
 #include <winpr/wlog.h>
 #include <winpr/endian.h>
@@ -34,8 +36,8 @@
 static char* create_temporary_file(void)
 {
 	BYTE buffer[32];
-	char* hex;
-	char* path;
+	char* hex = NULL;
+	char* path = NULL;
 
 	winpr_RAND(buffer, sizeof(buffer));
 	hex = winpr_BinToHexString(buffer, sizeof(buffer), FALSE);
@@ -129,7 +131,9 @@ krb5_error_code krb5glue_get_init_creds(krb5_context ctx, krb5_principal princ, 
 
 	WINPR_ASSERT(ctx);
 
-	krb5_get_init_creds_opt_alloc(ctx, &gic_opt);
+	rv = krb5_get_init_creds_opt_alloc(ctx, &gic_opt);
+	if (rv)
+		goto cleanup;
 
 	krb5_get_init_creds_opt_set_forwardable(gic_opt, 0);
 	krb5_get_init_creds_opt_set_proxiable(gic_opt, 0);
@@ -143,16 +147,33 @@ krb5_error_code krb5glue_get_init_creds(krb5_context ctx, krb5_principal princ, 
 		if (krb_settings->renewLifeTime)
 			krb5_get_init_creds_opt_set_renew_life(gic_opt, krb_settings->renewLifeTime);
 		if (krb_settings->withPac)
-			krb5_get_init_creds_opt_set_pac_request(ctx, gic_opt, TRUE);
+		{
+			rv = krb5_get_init_creds_opt_set_pac_request(ctx, gic_opt, TRUE);
+			if (rv)
+				goto cleanup;
+		}
 		if (krb_settings->armorCache)
-			krb5_get_init_creds_opt_set_fast_ccache_name(ctx, gic_opt, krb_settings->armorCache);
+		{
+			rv = krb5_get_init_creds_opt_set_fast_ccache_name(ctx, gic_opt,
+			                                                  krb_settings->armorCache);
+			if (rv)
+				goto cleanup;
+		}
 		if (krb_settings->pkinitX509Identity)
-			krb5_get_init_creds_opt_set_pa(ctx, gic_opt, "X509_user_identity",
-			                               krb_settings->pkinitX509Identity);
+		{
+			rv = krb5_get_init_creds_opt_set_pa(ctx, gic_opt, "X509_user_identity",
+			                                    krb_settings->pkinitX509Identity);
+			if (rv)
+				goto cleanup;
+		}
 		if (krb_settings->pkinitX509Anchors)
-			krb5_get_init_creds_opt_set_pa(ctx, gic_opt, "X509_anchors",
-			                               krb_settings->pkinitX509Anchors);
-		if (krb_settings->kdcUrl)
+		{
+			rv = krb5_get_init_creds_opt_set_pa(ctx, gic_opt, "X509_anchors",
+			                                    krb_settings->pkinitX509Anchors);
+			if (rv)
+				goto cleanup;
+		}
+		if (krb_settings->kdcUrl && (strnlen(krb_settings->kdcUrl, 2) > 0))
 		{
 			const char* names[4] = { 0 };
 			char* realm = NULL;
@@ -164,7 +185,10 @@ krb5_error_code krb5glue_get_init_creds(krb5_context ctx, krb5_principal princ, 
 
 			rv = ENOMEM;
 			if (winpr_asprintf(&kdc_url, &size, "https://%s/KdcProxy", krb_settings->kdcUrl) <= 0)
+			{
+				free(kdc_url);
 				goto cleanup;
+			}
 
 			realm = calloc(princ->realm.length + 1, 1);
 			if (!realm)
@@ -191,7 +215,7 @@ krb5_error_code krb5glue_get_init_creds(krb5_context ctx, krb5_principal princ, 
 			if ((rv = profile_flush_to_file(profile, tmp_profile_path)))
 				goto cleanup;
 
-			profile_release(profile);
+			profile_abandon(profile);
 			profile = NULL;
 			if ((rv = profile_init_path(tmp_profile_path, &profile)))
 				goto cleanup;
@@ -220,7 +244,7 @@ cleanup:
 	krb5_get_init_creds_opt_free(ctx, gic_opt);
 	if (is_temp_ctx)
 		krb5_free_context(ctx);
-	profile_release(profile);
+	profile_abandon(profile);
 	winpr_DeleteFile(tmp_profile_path);
 	free(tmp_profile_path);
 

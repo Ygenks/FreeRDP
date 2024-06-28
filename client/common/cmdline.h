@@ -34,7 +34,7 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	  "desktop composition" },
 	{ "app", COMMAND_LINE_VALUE_REQUIRED,
 	  "program:[<path>|<||alias>],cmd:<command>,file:<filename>,guid:<guid>,icon:<filename>,name:<"
-	  "name>,workdir:<directory>",
+	  "name>,workdir:<directory>,hidef:[on|off]",
 	  NULL, NULL, -1, NULL, "Remote application program" },
 #if defined(WITH_FREERDP_DEPRECATED_COMMANDLINE)
 	{ "app-cmd", COMMAND_LINE_VALUE_REQUIRED, "<parameters>", NULL, NULL, -1, NULL,
@@ -90,15 +90,14 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	  "[deny,ignore,name:<name>,tofu,fingerprint:<hash>:<hash as hex>[,fingerprint:<hash>:<another "
 	  "hash>]]",
 	  NULL, NULL, -1, NULL,
-	  "Certificate accept options. Use with care!"
+	  "Certificate accept options. Use with care!\n"
 	  " * deny         ... Automatically abort connection if the certificate does not match, no "
-	  "user interaction.          "
-	  " * ignore       ... Ignore the certificate checks altogether (overrules all other options)  "
-	  "                        "
+	  "user interaction.\n"
+	  " * ignore       ... Ignore the certificate checks altogether (overrules all other options)\n"
 	  " * name         ... Use the alternate <name> instead of the certificate subject to match "
-	  "locally stored certificates"
+	  "locally stored certificates\n"
 	  " * tofu         ... Accept certificate unconditionally on first connect and deny on "
-	  "subsequent connections if the certificate does not match"
+	  "subsequent connections if the certificate does not match\n"
 	  " * fingerprints ... A list of certificate hashes that are accepted unconditionally for a "
 	  "connection" },
 #if defined(WITH_FREERDP_DEPRECATED_COMMANDLINE)
@@ -112,18 +111,23 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	{ "cert-tofu", COMMAND_LINE_VALUE_FLAG, NULL, NULL, NULL, -1, NULL,
 	  "[DEPRECATED, use /cert:tofu] Automatically accept certificate on first connect" },
 #endif
+#ifdef _WIN32
+	{ "connect-child-session", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, "",
+	  "connect to child session (win32)" },
+#endif
 	{ "client-build-number", COMMAND_LINE_VALUE_REQUIRED, "<number>", NULL, NULL, -1, NULL,
 	  "Client Build Number sent to server (influences smartcard behaviour, see [MS-RDPESC])" },
 	{ "client-hostname", COMMAND_LINE_VALUE_REQUIRED, "<name>", NULL, NULL, -1, NULL,
 	  "Client Hostname to send to server" },
 	{ "clipboard", COMMAND_LINE_VALUE_BOOL | COMMAND_LINE_VALUE_OPTIONAL,
 	  "[[use-selection:<atom>],[direction-to:[all|local|remote|off]],[files-to[:all|local|remote|"
-	  "off]]],",
+	  "off]]]",
 	  BoolValueTrue, NULL, -1, NULL,
-	  "Redirect clipboard.                       "
+	  "Redirect clipboard:\n"
 	  " * use-selection:<atom>  ... (X11) Specify which X selection to access. Default is "
-	  "CLIPBOARD."
-	  " PRIMARY is the X-style middle-click selection." },
+	  "CLIPBOARD. PRIMARY is the X-style middle-click selection.\n"
+	  " * direction-to:[all|local|remote|off] control enabled clipboard direction\n"
+	  " * files-to:[all|local|remote|off] control enabled file clipboard directiont" },
 #if defined(WITH_FREERDP_DEPRECATED_COMMANDLINE)
 	{ "codec-cache", COMMAND_LINE_VALUE_REQUIRED, "[rfx|nsc|jpeg]", NULL, NULL, -1, NULL,
 	  "[DEPRECATED, use /cache:codec:[rfx|nsc|jpeg]] Bitmap codec cache" },
@@ -143,8 +147,8 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	  "later\" option in MSTSC." },
 	{ "drives", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL,
 	  "Redirect all mount points as shares" },
-	{ "dump", COMMAND_LINE_VALUE_REQUIRED, "<record|replay>,<file>", NULL, NULL, -1, NULL,
-	  "record or replay dump" },
+	{ "dump", COMMAND_LINE_VALUE_REQUIRED, "<record|replay>,file:<file>[,nodelay]", NULL, NULL, -1,
+	  NULL, "record or replay dump" },
 	{ "dvc", COMMAND_LINE_VALUE_REQUIRED, "<channel>[,<options>]", NULL, NULL, -1, NULL,
 	  "Dynamic virtual channel" },
 	{ "dynamic-resolution", COMMAND_LINE_VALUE_FLAG, NULL, NULL, NULL, -1, NULL,
@@ -163,9 +167,12 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	  "floatbar is disabled by default (when enabled defaults to sticky in fullscreen mode)" },
 	{ "fonts", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueTrue, NULL, -1, NULL,
 	  "smooth fonts (ClearType)" },
+	{ "force-console-callbacks", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL,
+	  "Use default callbacks (console) for certificate/credential/..." },
 	{ "frame-ack", COMMAND_LINE_VALUE_REQUIRED, "<number>", NULL, NULL, -1, NULL,
 	  "Number of frame acknowledgement" },
-	{ "args-from", COMMAND_LINE_VALUE_REQUIRED, "<file>|stdin|fd:<number>", NULL, NULL, -1, NULL,
+	{ "args-from", COMMAND_LINE_VALUE_REQUIRED, "<file>|stdin|fd:<number>|env:<name>", NULL, NULL,
+	  -1, NULL,
 	  "Read command line from a file, stdin or file descriptor. This argument can not be combined "
 	  "with any other. "
 	  "Provide one argument per line." },
@@ -176,7 +183,7 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	  "g:<gateway>[:<port>],u:<user>,d:<domain>,p:<password>,usage-method:["
 	  "direct|detect],access-token:<"
 	  "token>,type:[rpc|http[,no-websockets][,extauth-sspi-ntlm]|auto[,no-websockets][,extauth-"
-	  "sspi-ntlm]],",
+	  "sspi-ntlm]]|arm,url:<wss://url>,bearer:<oauth2-bearer-token>",
 	  NULL, NULL, -1, "gw", "Gateway Hostname" },
 #if defined(WITH_FREERDP_DEPRECATED_COMMANDLINE)
 	{ "g", COMMAND_LINE_VALUE_REQUIRED, "<gateway>[:<port>]", NULL, NULL, -1, NULL,
@@ -193,8 +200,9 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	  "Consume multitouch input locally" },
 #ifdef WITH_GFX_H264
 	{ "gfx", COMMAND_LINE_VALUE_OPTIONAL,
-	  "[[RFX|AVC420|AVC444],mask:<value>,small-cache[:on|off],thin-client[:on|off],progressive[:on|"
-	  "off]]",
+	  "[[progressive[:on|off]|RFX[:on|off]|AVC420[:on|off]AVC444[:on|off]],mask:<value>,small-"
+	  "cache[:on|off],thin-client[:on|off],progressive[:on|"
+	  "off],frame-ack[:on|off]]",
 	  NULL, NULL, -1, NULL, "RDP8 graphics pipeline" },
 #if defined(WITH_FREERDP_DEPRECATED_COMMANDLINE)
 	{ "gfx-h264", COMMAND_LINE_VALUE_OPTIONAL, "[[AVC420|AVC444],mask:<value>]", NULL, NULL, -1,
@@ -202,8 +210,9 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 #endif
 #else
 	{ "gfx", COMMAND_LINE_VALUE_OPTIONAL,
-	  "RFX,mask:<value>,small-cache[:on|off],thin-client[:on|off],progressive[:on|off]]", NULL,
-	  NULL, -1, NULL, "RDP8 graphics pipeline" },
+	  "[progressive[:on|off]|RFX[:on|off]|AVC420[:on|off]AVC444[:on|off]],mask:<value>,small-cache["
+	  ":on|off],thin-client[:on|off],progressive[:on|off]]",
+	  NULL, NULL, -1, NULL, "RDP8 graphics pipeline" },
 #endif
 #if defined(WITH_FREERDP_DEPRECATED_COMMANDLINE)
 	{ "gfx-progressive", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL,
@@ -238,7 +247,9 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	  "Print help" },
 	{ "home-drive", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL,
 	  "Redirect user home as share" },
-	{ "ipv6", COMMAND_LINE_VALUE_FLAG, NULL, NULL, NULL, -1, "6",
+	{ "ipv4", COMMAND_LINE_VALUE_OPTIONAL, "[:force]", NULL, NULL, -1, "4",
+	  "Prefer IPv4 AAA record over IPv6 A record" },
+	{ "ipv6", COMMAND_LINE_VALUE_OPTIONAL, "[:force]", NULL, NULL, -1, "6",
 	  "Prefer IPv6 AAA record over IPv4 A record" },
 #if defined(WITH_JPEG)
 	{ "jpeg", COMMAND_LINE_VALUE_FLAG, NULL, NULL, NULL, -1, NULL, "JPEG codec support" },
@@ -247,12 +258,13 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 #endif
 	{ "kbd", COMMAND_LINE_VALUE_REQUIRED,
 	  "[layout:[0x<id>|<name>],lang:<0x<id>>,fn-key:<value>,type:<value>,subtype:<value>,unicode[:"
-	  "on|off],remap:<key1>=<value1>,remap:<key2>=<value2>]",
+	  "on|off],remap:<key1>=<value1>,remap:<key2>=<value2>,pipe:<filename>]",
 	  NULL, NULL, -1, NULL,
-	  "Keyboard related options:"
-	  "* layout: set the keybouard layout announced to the server"
-	  "* lang: set the keyboard language identifier sent to the server"
-	  "* fn-key: Function key value" },
+	  "Keyboard related options:\n"
+	  " * layout: set the keybouard layout announced to the server\n"
+	  " * lang: set the keyboard language identifier sent to the server\n"
+	  " * fn-key: Function key value\n"
+	  " * pipe: Name of a named pipe that can be used to type text into the RDP session\n" },
 #if defined(WITH_FREERDP_DEPRECATED_COMMANDLINE)
 	{ "kbd-lang", COMMAND_LINE_VALUE_REQUIRED, "0x<id>", NULL, NULL, -1, NULL,
 	  "[DEPRECATED, use / kbd:lang:<value>] Keyboard active language identifier" },
@@ -283,8 +295,11 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	{ "load-balance-info", COMMAND_LINE_VALUE_REQUIRED, "<info-string>", NULL, NULL, -1, NULL,
 	  "Load balance info" },
 	{ "list", COMMAND_LINE_VALUE_REQUIRED | COMMAND_LINE_PRINT,
-	  "[kbd|kbd-scancode|kbd-lang|smartcard|monitor|tune]", "List available options for subcommand",
-	  NULL, -1, NULL, "List available options for subcommand" },
+	  "[kbd|kbd-scancode|kbd-lang[:<value>]|smartcard[:[pkinit-anchors:<path>][,pkcs11-module:<"
+	  "name>]]|"
+	  "monitor|tune]",
+	  "List available options for subcommand", NULL, -1, NULL,
+	  "List available options for subcommand" },
 	{ "log-filters", COMMAND_LINE_VALUE_REQUIRED, "<tag>:<level>[,<tag>:<level>[,...]]", NULL, NULL,
 	  -1, NULL, "Set logger filters, see wLog(7) for details" },
 	{ "log-level", COMMAND_LINE_VALUE_REQUIRED, "[OFF|FATAL|ERROR|WARN|INFO|DEBUG|TRACE]", NULL,
@@ -308,8 +323,13 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	  "Select monitors to use" },
 	{ "mouse-motion", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueTrue, NULL, -1, NULL,
 	  "Send mouse motion" },
-	{ "mouse-relative", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueTrue, NULL, -1, NULL,
+	{ "mouse-relative", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL,
 	  "Send mouse motion with relative addressing" },
+	{ "mouse", COMMAND_LINE_VALUE_REQUIRED, "[relative:[on|off],grab:[on|off]]", NULL, NULL, -1,
+	  NULL,
+	  "Mouse related options:\n"
+	  " * relative:   send relative mouse movements if supported by server\n"
+	  " * grab:       grab the mouse if within the window" },
 #if defined(CHANNEL_TSMF_CLIENT)
 	{ "multimedia", COMMAND_LINE_VALUE_OPTIONAL, "[sys:<sys>,][dev:<dev>,][decoder:<decoder>]",
 	  NULL, NULL, -1, "mmr", "[DEPRECATED], use /video] Redirect multimedia (video)" },
@@ -323,7 +343,7 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	{ "nego", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueTrue, NULL, -1, NULL,
 	  "protocol security negotiation" },
 	{ "network", COMMAND_LINE_VALUE_REQUIRED,
-	  "[modem|broadband|broadband-low|broadband-high|wan|lan|auto]", NULL, NULL, -1, NULL,
+	  "[invalid|modem|broadband|broadband-low|broadband-high|wan|lan|auto]", NULL, NULL, -1, NULL,
 	  "Network connection type" },
 	{ "nsc", COMMAND_LINE_VALUE_FLAG, NULL, NULL, NULL, -1, "nscodec", "NSCodec support" },
 #if defined(WITH_FREERDP_DEPRECATED_COMMANDLINE)
@@ -423,6 +443,8 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	  "SSH Agent forwarding channel" },
 	{ "sspi-module", COMMAND_LINE_VALUE_REQUIRED, "<SSPI module path>", NULL, NULL, -1, NULL,
 	  "SSPI shared library module file path" },
+	{ "winscard-module", COMMAND_LINE_VALUE_REQUIRED, "<WinSCard module path>", NULL, NULL, -1,
+	  NULL, "WinSCard shared library module file path" },
 	{ "disable-output", COMMAND_LINE_VALUE_FLAG, NULL, NULL, NULL, -1, NULL,
 	  "Deactivate all graphics decoding in the client session. Useful for load tests with many "
 	  "simultaneous connections" },
@@ -434,10 +456,10 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	{ "tls", COMMAND_LINE_VALUE_REQUIRED, "[ciphers|seclevel|secrets-file|enforce]", NULL, NULL, -1,
 	  NULL,
 	  "TLS configuration options:"
-	  " * ciphers:[netmon|ma|<cipher names>]"
+	  " * ciphers:[netmon|ma|<cipher names>]\n"
 	  " * seclevel:<level>, default: 1, range: [0-5] Override the default TLS security level, "
-	  "might be required for older target servers"
-	  " * secrets-file:<filename>"
+	  "might be required for older target servers\n"
+	  " * secrets-file:<filename>\n"
 	  " * enforce[:[ssl3|1.0|1.1|1.2|1.3]] Force use of SSL/TLS version for a connection. Some "
 	  "servers have a buggy TLS "
 	  "version negotiation and might fail without this. Defaults to TLS 1.2 if no argument is "
@@ -480,6 +502,9 @@ static const COMMAND_LINE_ARGUMENT_A global_cmd_args[] = {
 	  "Print version" },
 	{ "video", COMMAND_LINE_VALUE_FLAG, NULL, NULL, NULL, -1, NULL,
 	  "Video optimized remoting channel" },
+	{ "prevent-session-lock", COMMAND_LINE_VALUE_OPTIONAL, "<time in sec>", NULL, NULL, -1, NULL,
+	  "Prevent session locking by injecting fake mouse motion events to the server "
+	  "when the connection is idle (default interval: 180 seconds)" },
 	{ "vmconnect", COMMAND_LINE_VALUE_OPTIONAL, "<vmid>", NULL, NULL, -1, NULL,
 	  "Hyper-V console (use port 2179, disable negotiation)" },
 	{ "w", COMMAND_LINE_VALUE_REQUIRED, "<width>", "1024", NULL, -1, NULL, "Width" },

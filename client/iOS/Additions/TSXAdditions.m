@@ -11,6 +11,7 @@
 #import "TSXAdditions.h"
 #include <openssl/bio.h>
 #include <openssl/evp.h>
+#include <openssl/err.h>
 
 @implementation NSObject (TSXAdditions)
 
@@ -107,12 +108,11 @@
                   withSeparator:(NSString *)sep
                    afterNthChar:(int)sepnth
 {
-	int i;
 	NSMutableString *result;
 	NSString *immutableResult;
 
 	result = [[NSMutableString alloc] init];
-	for (i = 0; i < size; i++)
+	for (int i = 0; i < size; i++)
 	{
 		if (i && sep && sepnth && i % sepnth == 0)
 			[result appendString:sep];

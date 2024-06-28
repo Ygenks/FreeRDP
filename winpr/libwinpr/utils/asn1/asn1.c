@@ -176,7 +176,7 @@ void WinPrAsn1Encoder_Reset(WinPrAsn1Encoder* enc)
 
 void WinPrAsn1Encoder_Free(WinPrAsn1Encoder** penc)
 {
-	WinPrAsn1Encoder* enc;
+	WinPrAsn1Encoder* enc = NULL;
 
 	WINPR_ASSERT(penc);
 	enc = *penc;
@@ -197,7 +197,7 @@ void WinPrAsn1Encoder_Free(WinPrAsn1Encoder** penc)
 static Asn1Chunk* asn1enc_get_free_chunk(WinPrAsn1Encoder* enc, size_t chunkSz, BOOL commit,
                                          size_t* id)
 {
-	Asn1Chunk* ret;
+	Asn1Chunk* ret = NULL;
 	WINPR_ASSERT(enc);
 	WINPR_ASSERT(chunkSz);
 
@@ -257,7 +257,7 @@ static Asn1Chunk* asn1enc_get_free_chunk(WinPrAsn1Encoder* enc, size_t chunkSz, 
 
 static WinPrAsn1EncContainer* asn1enc_get_free_container(WinPrAsn1Encoder* enc, size_t* id)
 {
-	WinPrAsn1EncContainer* ret;
+	WinPrAsn1EncContainer* ret = NULL;
 	WINPR_ASSERT(enc);
 
 	if (enc->freeContainerIndex == enc->containerCapacity)
@@ -303,36 +303,37 @@ static void asn1WriteLen(wStream* s, size_t len)
 {
 	if (len < 128)
 	{
-		Stream_Write_UINT8(s, len);
+		Stream_Write_UINT8(s, (UINT8)len);
 	}
 	else if (len < (1 << 8))
 	{
 		Stream_Write_UINT8(s, 0x81);
-		Stream_Write_UINT8(s, len);
+		Stream_Write_UINT8(s, (UINT8)len);
 	}
 	else if (len < (1 << 16))
 	{
 		Stream_Write_UINT8(s, 0x82);
-		Stream_Write_UINT16_BE(s, len);
+		Stream_Write_UINT16_BE(s, (UINT16)len);
 	}
 	else if (len < (1 << 24))
 	{
 		Stream_Write_UINT8(s, 0x83);
-		Stream_Write_UINT24_BE(s, len);
+		Stream_Write_UINT24_BE(s, (UINT32)len);
 	}
 	else
 	{
+		WINPR_ASSERT(len <= UINT32_MAX);
 		Stream_Write_UINT8(s, 0x84);
-		Stream_Write_UINT32_BE(s, len);
+		Stream_Write_UINT32_BE(s, (UINT32)len);
 	}
 }
 
 static WinPrAsn1EncContainer* getAsn1Container(WinPrAsn1Encoder* enc, ContainerType ctype,
                                                WinPrAsn1_tag tag, BOOL contextual, size_t maxLen)
 {
-	size_t ret;
-	size_t chunkId;
-	WinPrAsn1EncContainer* container;
+	size_t ret = 0;
+	size_t chunkId = 0;
+	WinPrAsn1EncContainer* container = NULL;
 
 	Asn1Chunk* chunk = asn1enc_get_free_chunk(enc, maxLen, FALSE, &chunkId);
 	if (!chunk)
@@ -389,11 +390,13 @@ BOOL WinPrAsn1EncContextualOctetStringContainer(WinPrAsn1Encoder* enc, WinPrAsn1
 
 size_t WinPrAsn1EncEndContainer(WinPrAsn1Encoder* enc)
 {
-	size_t innerLen, i, unused;
-	size_t innerHeaderBytes, outerHeaderBytes;
+	size_t innerLen = 0;
+	size_t unused = 0;
+	size_t innerHeaderBytes = 0;
+	size_t outerHeaderBytes = 0;
 	BYTE containerByte = 0;
-	WinPrAsn1EncContainer* container;
-	Asn1Chunk* chunk;
+	WinPrAsn1EncContainer* container = NULL;
+	Asn1Chunk* chunk = NULL;
 	wStream staticS;
 	wStream* s = &staticS;
 
@@ -403,7 +406,7 @@ size_t WinPrAsn1EncEndContainer(WinPrAsn1Encoder* enc)
 	/* compute inner length */
 	container = &enc->containers[enc->freeContainerIndex - 1];
 	innerLen = 0;
-	for (i = container->headerChunkId + 1; i < enc->freeChunkId; i++)
+	for (size_t i = container->headerChunkId + 1; i < enc->freeChunkId; i++)
 		innerLen += enc->chunks[i].used;
 
 	/* compute effective headerLength */
@@ -476,7 +479,7 @@ size_t WinPrAsn1EncEndContainer(WinPrAsn1Encoder* enc)
 
 static BOOL asn1_getWriteStream(WinPrAsn1Encoder* enc, size_t len, wStream* s)
 {
-	BYTE* dest;
+	BYTE* dest = NULL;
 	Asn1Chunk* chunk = asn1enc_get_free_chunk(enc, len, TRUE, NULL);
 	if (!chunk)
 		return FALSE;
@@ -537,7 +540,7 @@ static size_t WinPrAsn1EncIntegerLike(WinPrAsn1Encoder* enc, WinPrAsn1_tag b,
 {
 	wStream staticS;
 	wStream* s = &staticS;
-	size_t len;
+	size_t len = 0;
 
 	len = asn1IntegerLen(value);
 	if (!asn1_getWriteStream(enc, 1 + len, s))
@@ -577,7 +580,8 @@ static size_t WinPrAsn1EncContextualIntegerLike(WinPrAsn1Encoder* enc, WinPrAsn1
 {
 	wStream staticS;
 	wStream* s = &staticS;
-	size_t len, outLen;
+	size_t len = 0;
+	size_t outLen = 0;
 
 	WINPR_ASSERT(enc);
 	WINPR_ASSERT_VALID_TAG(tagId);
@@ -662,7 +666,7 @@ static size_t WinPrAsn1EncMemoryChunk(WinPrAsn1Encoder* enc, BYTE wireType,
                                       const WinPrAsn1_MemoryChunk* mchunk)
 {
 	wStream s;
-	size_t len;
+	size_t len = 0;
 
 	WINPR_ASSERT(enc);
 	WINPR_ASSERT(mchunk);
@@ -710,7 +714,8 @@ static size_t WinPrAsn1EncContextualMemoryChunk(WinPrAsn1Encoder* enc, BYTE wire
                                                 const WinPrAsn1_MemoryChunk* mchunk)
 {
 	wStream s;
-	size_t len, outLen;
+	size_t len = 0;
+	size_t outLen = 0;
 
 	WINPR_ASSERT(enc);
 	WINPR_ASSERT_VALID_TAG(tagId);
@@ -818,7 +823,6 @@ size_t WinPrAsn1EncContextualUtcTime(WinPrAsn1Encoder* enc, WinPrAsn1_tagId tagI
 BOOL WinPrAsn1EncStreamSize(WinPrAsn1Encoder* enc, size_t* s)
 {
 	size_t finalSize = 0;
-	size_t i;
 
 	WINPR_ASSERT(enc);
 	WINPR_ASSERT(s);
@@ -829,7 +833,7 @@ BOOL WinPrAsn1EncStreamSize(WinPrAsn1Encoder* enc, size_t* s)
 		return FALSE;
 	}
 
-	for (i = 0; i < enc->freeChunkId; i++)
+	for (size_t i = 0; i < enc->freeChunkId; i++)
 		finalSize += enc->chunks[i].used;
 	*s = finalSize;
 	return TRUE;
@@ -837,8 +841,7 @@ BOOL WinPrAsn1EncStreamSize(WinPrAsn1Encoder* enc, size_t* s)
 
 BOOL WinPrAsn1EncToStream(WinPrAsn1Encoder* enc, wStream* s)
 {
-	size_t finalSize;
-	size_t i;
+	size_t finalSize = 0;
 
 	WINPR_ASSERT(enc);
 	WINPR_ASSERT(s);
@@ -849,7 +852,7 @@ BOOL WinPrAsn1EncToStream(WinPrAsn1Encoder* enc, wStream* s)
 	if (!Stream_EnsureRemainingCapacity(s, finalSize))
 		return FALSE;
 
-	for (i = 0; i < enc->freeChunkId; i++)
+	for (size_t i = 0; i < enc->freeChunkId; i++)
 	{
 		BYTE* src = Stream_Buffer(enc->pool) + enc->chunks[i].poolOffset;
 		Stream_Write(s, src, enc->chunks[i].used);
@@ -891,7 +894,7 @@ BOOL WinPrAsn1DecPeekTag(WinPrAsn1Decoder* dec, WinPrAsn1_tag* tag)
 
 static size_t readLen(wStream* s, size_t* len, BOOL derCheck)
 {
-	size_t retLen;
+	size_t retLen = 0;
 	size_t ret = 0;
 
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
@@ -901,7 +904,7 @@ static size_t readLen(wStream* s, size_t* len, BOOL derCheck)
 	ret++;
 	if (retLen & 0x80)
 	{
-		BYTE tmp;
+		BYTE tmp = 0;
 		size_t nBytes = (retLen & 0x7f);
 
 		if (!Stream_CheckAndLogRequiredLength(TAG, s, nBytes))
@@ -928,7 +931,7 @@ static size_t readLen(wStream* s, size_t* len, BOOL derCheck)
 
 static size_t readTagAndLen(WinPrAsn1Decoder* dec, wStream* s, WinPrAsn1_tag* tag, size_t* len)
 {
-	size_t lenBytes;
+	size_t lenBytes = 0;
 
 	if (Stream_GetRemainingLength(s) < 1)
 		return 0;
@@ -965,7 +968,7 @@ size_t WinPrAsn1DecPeekTagAndLen(WinPrAsn1Decoder* dec, WinPrAsn1_tag* tag, size
 size_t WinPrAsn1DecReadTagLenValue(WinPrAsn1Decoder* dec, WinPrAsn1_tag* tag, size_t* len,
                                    WinPrAsn1Decoder* value)
 {
-	size_t ret;
+	size_t ret = 0;
 	WINPR_ASSERT(dec);
 	WINPR_ASSERT(tag);
 	WINPR_ASSERT(len);
@@ -986,10 +989,10 @@ size_t WinPrAsn1DecReadTagLenValue(WinPrAsn1Decoder* dec, WinPrAsn1_tag* tag, si
 
 size_t WinPrAsn1DecReadBoolean(WinPrAsn1Decoder* dec, WinPrAsn1_BOOL* target)
 {
-	BYTE v;
-	WinPrAsn1_tag tag;
-	size_t len;
-	size_t ret;
+	BYTE v = 0;
+	WinPrAsn1_tag tag = 0;
+	size_t len = 0;
+	size_t ret = 0;
 
 	WINPR_ASSERT(dec);
 	WINPR_ASSERT(target);
@@ -1008,26 +1011,28 @@ size_t WinPrAsn1DecReadBoolean(WinPrAsn1Decoder* dec, WinPrAsn1_BOOL* target)
 static size_t WinPrAsn1DecReadIntegerLike(WinPrAsn1Decoder* dec, WinPrAsn1_tag expectedTag,
                                           WinPrAsn1_INTEGER* target)
 {
-	signed char v;
-	WinPrAsn1_tag tag;
-	size_t len;
-	size_t ret;
+	WinPrAsn1_tag tag = 0;
+	size_t len = 0;
 
 	WINPR_ASSERT(dec);
 	WINPR_ASSERT(target);
 
-	ret = readTagAndLen(dec, &dec->source, &tag, &len);
-	if (!ret || tag != expectedTag)
+	size_t ret = readTagAndLen(dec, &dec->source, &tag, &len);
+	if (!ret || (tag != expectedTag))
 		return 0;
-	if (!Stream_CheckAndLogRequiredLength(TAG, &dec->source, len) || len > 4)
+	if (!Stream_CheckAndLogRequiredLength(TAG, &dec->source, len) || (len > 4))
 		return 0;
 
-	ret += len;
-	for (*target = 0; len; len--)
+	WinPrAsn1_INTEGER val = 0;
+	for (size_t x = 0; x < len; x++)
 	{
+		INT8 v = 0;
 		Stream_Read_INT8(&dec->source, v);
-		*target = (*target << 8) + v;
+		val = (WinPrAsn1_INTEGER)(((UINT32)val) << 8);
+		val |= v;
 	}
+	*target = val;
+	ret += len;
 
 	/* TODO: check ber/der rules */
 	return ret;
@@ -1046,9 +1051,9 @@ size_t WinPrAsn1DecReadEnumerated(WinPrAsn1Decoder* dec, WinPrAsn1_ENUMERATED* t
 static size_t WinPrAsn1DecReadMemoryChunkLike(WinPrAsn1Decoder* dec, WinPrAsn1_tag expectedTag,
                                               WinPrAsn1_MemoryChunk* target, BOOL allocate)
 {
-	WinPrAsn1_tag tag;
-	size_t len;
-	size_t ret;
+	WinPrAsn1_tag tag = 0;
+	size_t len = 0;
+	size_t ret = 0;
 
 	WINPR_ASSERT(dec);
 	WINPR_ASSERT(target);
@@ -1093,10 +1098,10 @@ size_t WinPrAsn1DecReadOctetString(WinPrAsn1Decoder* dec, WinPrAsn1_OctetString*
 
 size_t WinPrAsn1DecReadIA5String(WinPrAsn1Decoder* dec, WinPrAsn1_IA5STRING* target)
 {
-	WinPrAsn1_tag tag;
-	size_t len;
-	size_t ret;
-	WinPrAsn1_IA5STRING s;
+	WinPrAsn1_tag tag = 0;
+	size_t len = 0;
+	size_t ret = 0;
+	WinPrAsn1_IA5STRING s = NULL;
 
 	WINPR_ASSERT(dec);
 	WINPR_ASSERT(target);
@@ -1120,10 +1125,10 @@ size_t WinPrAsn1DecReadIA5String(WinPrAsn1Decoder* dec, WinPrAsn1_IA5STRING* tar
 
 size_t WinPrAsn1DecReadGeneralString(WinPrAsn1Decoder* dec, WinPrAsn1_STRING* target)
 {
-	WinPrAsn1_tag tag;
-	size_t len;
-	size_t ret;
-	WinPrAsn1_IA5STRING s;
+	WinPrAsn1_tag tag = 0;
+	size_t len = 0;
+	size_t ret = 0;
+	WinPrAsn1_IA5STRING s = NULL;
 
 	WINPR_ASSERT(dec);
 	WINPR_ASSERT(target);
@@ -1148,7 +1153,7 @@ size_t WinPrAsn1DecReadGeneralString(WinPrAsn1Decoder* dec, WinPrAsn1_STRING* ta
 static int read2digits(wStream* s)
 {
 	int ret = 0;
-	char c;
+	char c = 0;
 
 	Stream_Read_UINT8(s, c);
 	if (c < '0' || c > '9')
@@ -1166,10 +1171,10 @@ static int read2digits(wStream* s)
 
 size_t WinPrAsn1DecReadUtcTime(WinPrAsn1Decoder* dec, WinPrAsn1_UTCTIME* target)
 {
-	WinPrAsn1_tag tag;
-	size_t len;
-	size_t ret;
-	int v;
+	WinPrAsn1_tag tag = 0;
+	size_t len = 0;
+	size_t ret = 0;
+	int v = 0;
 	wStream sub;
 	wStream* s = &sub;
 
@@ -1182,7 +1187,7 @@ size_t WinPrAsn1DecReadUtcTime(WinPrAsn1Decoder* dec, WinPrAsn1_UTCTIME* target)
 	if (!Stream_CheckAndLogRequiredLength(TAG, &dec->source, len) || len < 12)
 		return 0;
 
-	Stream_StaticConstInit(s, Stream_Pointer(&dec->source), len);
+	Stream_StaticConstInit(s, Stream_ConstPointer(&dec->source), len);
 
 	v = read2digits(s);
 	if (v <= 0)
@@ -1227,9 +1232,9 @@ size_t WinPrAsn1DecReadUtcTime(WinPrAsn1Decoder* dec, WinPrAsn1_UTCTIME* target)
 
 size_t WinPrAsn1DecReadNull(WinPrAsn1Decoder* dec)
 {
-	WinPrAsn1_tag tag;
-	size_t len;
-	size_t ret;
+	WinPrAsn1_tag tag = 0;
+	size_t len = 0;
+	size_t ret = 0;
 
 	WINPR_ASSERT(dec);
 
@@ -1243,23 +1248,23 @@ size_t WinPrAsn1DecReadNull(WinPrAsn1Decoder* dec)
 static size_t readConstructed(WinPrAsn1Decoder* dec, wStream* s, WinPrAsn1_tag* tag,
                               WinPrAsn1Decoder* target)
 {
-	size_t len;
-	size_t ret;
+	size_t len = 0;
+	size_t ret = 0;
 
 	ret = readTagAndLen(dec, s, tag, &len);
 	if (!ret || !Stream_CheckAndLogRequiredLength(TAG, s, len))
 		return 0;
 
 	target->encoding = dec->encoding;
-	Stream_StaticConstInit(&target->source, Stream_Pointer(s), len);
+	Stream_StaticConstInit(&target->source, Stream_ConstPointer(s), len);
 	Stream_Seek(s, len);
 	return ret + len;
 }
 
 size_t WinPrAsn1DecReadApp(WinPrAsn1Decoder* dec, WinPrAsn1_tagId* tagId, WinPrAsn1Decoder* target)
 {
-	WinPrAsn1_tag tag;
-	size_t ret;
+	WinPrAsn1_tag tag = 0;
+	size_t ret = 0;
 
 	WINPR_ASSERT(dec);
 	WINPR_ASSERT(target);
@@ -1274,8 +1279,8 @@ size_t WinPrAsn1DecReadApp(WinPrAsn1Decoder* dec, WinPrAsn1_tagId* tagId, WinPrA
 
 size_t WinPrAsn1DecReadSequence(WinPrAsn1Decoder* dec, WinPrAsn1Decoder* target)
 {
-	WinPrAsn1_tag tag;
-	size_t ret;
+	WinPrAsn1_tag tag = 0;
+	size_t ret = 0;
 
 	WINPR_ASSERT(dec);
 	WINPR_ASSERT(target);
@@ -1289,8 +1294,8 @@ size_t WinPrAsn1DecReadSequence(WinPrAsn1Decoder* dec, WinPrAsn1Decoder* target)
 
 size_t WinPrAsn1DecReadSet(WinPrAsn1Decoder* dec, WinPrAsn1Decoder* target)
 {
-	WinPrAsn1_tag tag;
-	size_t ret;
+	WinPrAsn1_tag tag = 0;
+	size_t ret = 0;
 
 	WINPR_ASSERT(dec);
 	WINPR_ASSERT(target);
@@ -1305,8 +1310,8 @@ size_t WinPrAsn1DecReadSet(WinPrAsn1Decoder* dec, WinPrAsn1Decoder* target)
 static size_t readContextualTag(WinPrAsn1Decoder* dec, wStream* s, WinPrAsn1_tagId* tagId,
                                 WinPrAsn1Decoder* ctxtDec)
 {
-	size_t ret;
-	WinPrAsn1_tag ftag;
+	size_t ret = 0;
+	WinPrAsn1_tag ftag = 0;
 
 	ret = readConstructed(dec, s, &ftag, ctxtDec);
 	if (!ret)
@@ -1335,7 +1340,7 @@ size_t WinPrAsn1DecPeekContextualTag(WinPrAsn1Decoder* dec, WinPrAsn1_tagId* tag
 	wStream staticS;
 	WINPR_ASSERT(dec);
 
-	Stream_StaticConstInit(&staticS, Stream_Pointer(&dec->source),
+	Stream_StaticConstInit(&staticS, Stream_ConstPointer(&dec->source),
 	                       Stream_GetRemainingLength(&dec->source));
 	return readContextualTag(dec, &staticS, tagId, ctxtDec);
 }
@@ -1343,8 +1348,8 @@ size_t WinPrAsn1DecPeekContextualTag(WinPrAsn1Decoder* dec, WinPrAsn1_tagId* tag
 static size_t readContextualHeader(WinPrAsn1Decoder* dec, WinPrAsn1_tagId tagId, BOOL* error,
                                    WinPrAsn1Decoder* content)
 {
-	WinPrAsn1_tag ftag;
-	size_t ret;
+	WinPrAsn1_tag ftag = 0;
+	size_t ret = 0;
 
 	WINPR_ASSERT(dec);
 	WINPR_ASSERT(error);
@@ -1368,7 +1373,8 @@ static size_t readContextualHeader(WinPrAsn1Decoder* dec, WinPrAsn1_tagId tagId,
 size_t WinPrAsn1DecReadContextualBool(WinPrAsn1Decoder* dec, WinPrAsn1_tagId tagId, BOOL* error,
                                       WinPrAsn1_BOOL* target)
 {
-	size_t ret, ret2;
+	size_t ret = 0;
+	size_t ret2 = 0;
 	WinPrAsn1Decoder content;
 
 	ret = readContextualHeader(dec, tagId, error, &content);
@@ -1389,7 +1395,8 @@ size_t WinPrAsn1DecReadContextualBool(WinPrAsn1Decoder* dec, WinPrAsn1_tagId tag
 size_t WinPrAsn1DecReadContextualInteger(WinPrAsn1Decoder* dec, WinPrAsn1_tagId tagId, BOOL* error,
                                          WinPrAsn1_INTEGER* target)
 {
-	size_t ret, ret2;
+	size_t ret = 0;
+	size_t ret2 = 0;
 	WinPrAsn1Decoder content;
 
 	ret = readContextualHeader(dec, tagId, error, &content);
@@ -1410,7 +1417,8 @@ size_t WinPrAsn1DecReadContextualInteger(WinPrAsn1Decoder* dec, WinPrAsn1_tagId 
 size_t WinPrAsn1DecReadContextualOID(WinPrAsn1Decoder* dec, WinPrAsn1_tagId tagId, BOOL* error,
                                      WinPrAsn1_OID* target, BOOL allocate)
 {
-	size_t ret, ret2;
+	size_t ret = 0;
+	size_t ret2 = 0;
 	WinPrAsn1Decoder content;
 
 	ret = readContextualHeader(dec, tagId, error, &content);
@@ -1432,7 +1440,8 @@ size_t WinPrAsn1DecReadContextualOctetString(WinPrAsn1Decoder* dec, WinPrAsn1_ta
                                              BOOL* error, WinPrAsn1_OctetString* target,
                                              BOOL allocate)
 {
-	size_t ret, ret2;
+	size_t ret = 0;
+	size_t ret2 = 0;
 	WinPrAsn1Decoder content;
 
 	ret = readContextualHeader(dec, tagId, error, &content);
@@ -1453,7 +1462,8 @@ size_t WinPrAsn1DecReadContextualOctetString(WinPrAsn1Decoder* dec, WinPrAsn1_ta
 size_t WinPrAsn1DecReadContextualSequence(WinPrAsn1Decoder* dec, WinPrAsn1_tagId tagId, BOOL* error,
                                           WinPrAsn1Decoder* target)
 {
-	size_t ret, ret2;
+	size_t ret = 0;
+	size_t ret2 = 0;
 	WinPrAsn1Decoder content;
 
 	ret = readContextualHeader(dec, tagId, error, &content);
@@ -1476,7 +1486,7 @@ wStream WinPrAsn1DecGetStream(WinPrAsn1Decoder* dec)
 	wStream s = { 0 };
 	WINPR_ASSERT(dec);
 
-	Stream_StaticConstInit(&s, Stream_Pointer(&dec->source),
+	Stream_StaticConstInit(&s, Stream_ConstPointer(&dec->source),
 	                       Stream_GetRemainingLength(&dec->source));
 	return s;
 }

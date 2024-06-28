@@ -16,23 +16,28 @@
 # limitations under the License.
 cmake_minimum_required(VERSION 3.13)
 
-project(sfreerdp LANGUAGES C)
+if(POLICY CMP0091)
+	cmake_policy(SET CMP0091 NEW)
+endif()
+if (NOT FREERDP_DEFAULT_PROJECT_VERSION)
+	set(FREERDP_DEFAULT_PROJECT_VERSION "1.0.0.0")
+endif()
+
+project(sfreerdp
+	LANGUAGES C
+	VERSION ${FREERDP_DEFAULT_PROJECT_VERSION}
+)
+
+message("project ${PROJECT_NAME} is using version ${PROJECT_VERSION}")
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
 
-option(CMAKE_COLOR_MAKEFILE "colorful CMake makefile" ON)
-option(CMAKE_VERBOSE_MAKEFILE "verbose CMake makefile" ON)
-option(CMAKE_POSITION_INDEPENDENT_CODE "build with position independent code (-fPIC or -fPIE)" ON)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/)
+include(CommonConfigOptions)
 
 include(ConfigureFreeRDP)
-
-include(GNUInstallDirsWrapper)
-
-# RPATH configuration
-include(ConfigureRPATH)
 
 set(SRCS
 	tf_channels.c
@@ -40,23 +45,7 @@ set(SRCS
 	tf_freerdp.h
 	tf_freerdp.c)
 
-# On windows create dll version information.
-# Vendor, product and year are already set in top level CMakeLists.txt
-if (WIN32)
-  set (RC_VERSION_MAJOR ${FREERDP_VERSION_MAJOR})
-  set (RC_VERSION_MINOR ${FREERDP_VERSION_MINOR})
-  set (RC_VERSION_BUILD ${FREERDP_VERSION_REVISION})
-  set (RC_VERSION_FILE "${PROJECT_NAME}${CMAKE_EXECUTABLE_SUFFIX}" )
-
-  configure_file(
-    ${PROJECT_SOURCE_DIR}/../../cmake/WindowsDLLVersion.rc.in
-    ${CMAKE_CURRENT_BINARY_DIR}/version.rc
-    @ONLY)
-
-list (APPEND SRCS ${CMAKE_CURRENT_BINARY_DIR}/version.rc)
-endif()
-
-add_executable(${PROJECT_NAME} ${SRCS})
+AddTargetWithResourceFile(${PROJECT_NAME} TRUE "${PROJECT_VERSION}" SRCS)
 
 set(LIBS
     freerdp-client
