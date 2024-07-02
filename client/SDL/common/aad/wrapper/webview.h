@@ -527,7 +527,7 @@ namespace webview
 				int n = json_unescape(value, value_sz, nullptr);
 				if (n > 0)
 				{
-					char* decoded = new char[n + 1];
+					char* decoded = new char[1ull + n];
 					json_unescape(value, value_sz, decoded);
 					std::string result(decoded, n);
 					delete[] decoded;
@@ -989,6 +989,13 @@ namespace webview
 			{
 				m_navigateCallback = callback;
 				m_navigateCallbackArg = arg;
+			}
+
+			void add_scheme_handler(const std::string& scheme,
+			                        std::function<void(const std::string&, void*)> callback,
+			                        void* arg)
+			{
+				// TODO: Implement
 			}
 
 			void set_html(const std::string& html)
@@ -2454,6 +2461,13 @@ namespace webview
 			                           void* arg)
 			{
 				m_com_handler->add_navigate_listener(callback, arg);
+			}
+
+			void add_scheme_handler(const std::string& scheme,
+			                        std::function<void(const std::string&, void*)> callback,
+			                        void* arg)
+			{
+				// TODO: Implement
 			}
 
 			void set_html(const std::string& html)
